@@ -1,0 +1,82 @@
+import { FastifyInstance } from "fastify";
+import { zodToJsonSchema } from "zod-to-json-schema";
+import { DecodeTokenRequestSchema, DecodeTokenResponseSchema } from "@ua/common";
+import { getPrisma } from "../lib/prisma";
+import { requireApiSecret } from "../lib/apiSecretAuth";
+import { errorResponse } from "../lib/errors";
+import { verifyApiSecret } from "../services/apiSecrets";
+import jwt from "jsonwebtoken";
+import { verifyIntegrityToken } from "../lib/crypto";
+import { validateTokenClaims } from "../services/tokenValidation";
+
+export default async function appRoutes(app: FastifyInstance) {
+  app.post(
+    "/decodeToken",
+    {
+      schema: {
+        body: zodToJsonSchema(DecodeTokenRequestSchema),
+        response: {
+          200: zodToJsonSchema(DecodeTokenResponseSchema)
+        }
+      }
+    },
+    async (request, reply) => {
+      const apiSecretHeader = app.config.security.apiSecretHeader;
+      const rawSecret = requireApiSecret(request, apiSecretHeader);
+      const appRecord = await verifyApiSecret(rawSecret);
+      if (!appRecord) {
+        reply.code(401).send(errorResponse("UNAUTHORIZED", "Invalid API secret"));
+        return;
+      }
+
+      const body = DecodeTokenRequestSchema.parse(request.body);
+      if (body.projectId !== appRecord.projectId) {
+        reply.code(403).send(errorResponse("PROJECT_MISMATCH", "projectId mismatch"));
+        return;
+      }
+
+      let decoded;
+      try {
+        decoded = await decodeTokenWithFederation(app, body.token);
+      } catch (error) {
+        reply.code(400).send(errorResponse("INVALID_TOKEN", "Token verification failed"));
+        return;
+      }
+      const requestHash = validateTokenClaims(
+        decoded.payload,
+        body.projectId,
+        body.expectedRequestHash
+      );
+
+      reply.send({
+        verdict: decoded.payload.verdict,
+        requestHash,
+        claims: {
+          iss: decoded.payload.iss,
+          projectId: decoded.payload.projectId,
+          requestHash,
+          app: decoded.payload.app,
+          deviceIntegrity: decoded.payload.deviceIntegrity
+        }
+      });
+    }
+  );
+}
+
+async function decodeTokenWithFederation(app: FastifyInstance, token: string) {
+  const unverified = jwt.decode(token) as jwt.JwtPayload | null;
+  const iss = unverified?.iss as string | undefined;
+  if (!iss || iss === app.config.backendId) {
+    return verifyIntegrityToken(token, app.config.signingKeys.keys);
+  }
+
+  const prisma = getPrisma();
+  const backend = await prisma.federationBackend.findFirst({
+    where: { backendId: iss, status: "active" }
+  });
+  if (!backend) {
+    throw new Error("Unknown federation backend");
+  }
+  const publicKeys = backend.publicKeys as Array<{ kid: string; alg: string; publicKey: string }>;
+  return verifyIntegrityToken(token, publicKeys);
+}

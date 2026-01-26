@@ -1,5 +1,6 @@
 import fs from "fs";
 import path from "path";
+import crypto from "crypto";
 import yaml from "js-yaml";
 
 export type SigningKey = {
@@ -11,26 +12,14 @@ export type SigningKey = {
 
 export type Config = {
   backendId: string;
-  region: string;
-  challenge: {
-    ttlSeconds: number;
-  };
+  externalUrl?: string;
+  configPath: string;
   signingKeys: {
     activeKid: string;
     keys: SigningKey[];
   };
-  federation: {
-    backends: Array<{
-      backendId: string;
-      name: string;
-      region: string;
-      trustLevel: number;
-      status: "active" | "dev";
-      publicKeys: Array<{ kid: string; alg: string; publicKey: string }>;
-    }>;
-  };
   security: {
-    apiKeyHeader: string;
+    apiSecretHeader: string;
     jwt: {
       accessTtlMinutes: number;
       refreshTtlDays: number;
@@ -43,6 +32,30 @@ const DEFAULT_CONFIG_PATHS = [
   path.resolve(process.cwd(), "apps", "backend", "config.yaml")
 ];
 
+function generateUuidV7(): string {
+  const bytes = crypto.randomBytes(16);
+  const now = Date.now();
+  bytes[0] = (now >> 40) & 0xff;
+  bytes[1] = (now >> 32) & 0xff;
+  bytes[2] = (now >> 24) & 0xff;
+  bytes[3] = (now >> 16) & 0xff;
+  bytes[4] = (now >> 8) & 0xff;
+  bytes[5] = now & 0xff;
+  bytes[6] = (bytes[6] & 0x0f) | 0x70;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = bytes.toString("hex");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(
+    16,
+    20
+  )}-${hex.slice(20)}`;
+}
+
+function persistConfig(pathname: string, config: Config) {
+  const { configPath: _ignore, ...persisted } = config;
+  const yamlText = yaml.dump(persisted, { lineWidth: 120 });
+  fs.writeFileSync(pathname, yamlText, "utf8");
+}
+
 export function loadConfig(): Config {
   const explicitPath = process.env.UA_CONFIG_PATH;
   const configPath =
@@ -53,20 +66,20 @@ export function loadConfig(): Config {
   }
   const file = fs.readFileSync(configPath, "utf8");
   const loaded = yaml.load(file) as Config;
+  const backendId = process.env.UA_BACKEND_ID || loaded.backendId || generateUuidV7();
 
   const config: Config = {
     ...loaded,
-    backendId: process.env.UA_BACKEND_ID || loaded.backendId,
-    region: process.env.UA_REGION || loaded.region,
-    challenge: {
-      ttlSeconds: Number(process.env.UA_CHALLENGE_TTL || loaded.challenge.ttlSeconds)
-    },
+    backendId,
+    externalUrl: process.env.UA_EXTERNAL_URL || loaded.externalUrl,
+    configPath,
     signingKeys: {
       ...loaded.signingKeys,
       activeKid: process.env.UA_ACTIVE_KID || loaded.signingKeys.activeKid
     },
     security: {
-      apiKeyHeader: process.env.UA_API_KEY_HEADER || loaded.security.apiKeyHeader,
+      apiSecretHeader:
+        process.env.UA_API_SECRET_HEADER || loaded.security.apiSecretHeader || "x-ua-api-secret",
       jwt: {
         accessTtlMinutes: Number(
           process.env.UA_JWT_ACCESS_TTL || loaded.security.jwt.accessTtlMinutes
@@ -78,7 +91,19 @@ export function loadConfig(): Config {
     }
   };
 
+  if (!loaded.backendId || loaded.backendId !== backendId) {
+    try {
+      persistConfig(configPath, config);
+    } catch (error) {
+      console.warn("Failed to persist backendId to config.yaml", error);
+    }
+  }
+
   return config;
+}
+
+export function saveConfig(config: Config) {
+  persistConfig(config.configPath, config);
 }
 
 export function getActiveSigningKey(config: Config): SigningKey {

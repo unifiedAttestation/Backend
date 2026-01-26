@@ -3,10 +3,17 @@ export type ErrorCode =
   | "FORBIDDEN"
   | "PROJECT_NOT_FOUND"
   | "PROJECT_MISMATCH"
-  | "INVALID_CHALLENGE"
-  | "CHALLENGE_EXPIRED"
-  | "REPLAY_DETECTED"
-  | "INVALID_ARTIFACT"
+  | "APP_NOT_FOUND"
+  | "INVALID_CHAIN"
+  | "NO_TRUST_ANCHORS"
+  | "CHALLENGE_MISMATCH"
+  | "PACKAGE_MISMATCH"
+  | "SIGNER_MISMATCH"
+  | "TOKEN_EXPIRED"
+  | "REQUEST_HASH_MISMATCH"
+  | "INVALID_TOKEN"
+  | "INVALID_REQUEST"
+  | "NOT_FOUND"
   | "INTERNAL_ERROR";
 
 export function errorResponse(code: ErrorCode, message: string, details?: Record<string, unknown>) {

@@ -1,43 +1,10 @@
 import { FastifyInstance } from "fastify";
 import { zodToJsonSchema } from "zod-to-json-schema";
-import {
-  AuthResponseSchema,
-  LoginRequestSchema,
-  RefreshRequestSchema,
-  RegisterRequestSchema
-} from "@ua/common";
+import { AuthResponseSchema, LoginRequestSchema, RefreshRequestSchema } from "@ua/common";
 import { errorResponse } from "../lib/errors";
-import { issueTokens, registerUser, verifyRefreshToken, verifyUser } from "../services/auth";
+import { issueTokens, verifyRefreshToken, verifyUser } from "../services/auth";
 
 export default async function authRoutes(app: FastifyInstance) {
-  app.post(
-    "/register",
-    {
-      schema: {
-        body: zodToJsonSchema(RegisterRequestSchema),
-        response: {
-          200: zodToJsonSchema(AuthResponseSchema)
-        }
-      }
-    },
-    async (request, reply) => {
-      const allowed = app.authRateLimiter.take(`register:${request.ip}`);
-      if (!allowed) {
-        reply.code(429).send(errorResponse("FORBIDDEN", "Rate limit exceeded"));
-        return;
-      }
-      const body = RegisterRequestSchema.parse(request.body);
-      const user = await registerUser(body.email, body.password, body.role);
-      const tokens = issueTokens(
-        user.id,
-        user.role,
-        app.config.security.jwt.accessTtlMinutes,
-        app.config.security.jwt.refreshTtlDays
-      );
-      reply.send(tokens);
-    }
-  );
-
   app.post(
     "/login",
     {

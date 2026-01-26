@@ -1,12 +1,12 @@
-# Unified Attestation
+# Unified Attestation Backend (Combined X + Y)
 
-Unified Attestation (UA) is an open-source, federated alternative to Google Play Integrity. Each app registers with a single **home backend X**, while device/OEM trust roots can be registered with different federation backends **Y**. The app server always calls backend **X** for challenges and verification.
+Unified Attestation (UA) is an open-source, federated alternative to Play Integrity. This backend acts as both **home backend X** (app-facing) and **device backend Y** (attestation verifier). Federation is handled offline via stored trust anchors and verification keys.
 
-## Architecture (V1)
+## Architecture
 - **Backend API** (`/apps/backend`): Fastify + Prisma + PostgreSQL
 - **Portal** (`/apps/portal`): Next.js + Tailwind
-- **Shared types** (`/packages/common`): Zod schemas and shared types
-- **Federation list**: configured in `config.yaml`
+- **Shared types** (`/packages/common`)
+- **Federation trust store**: stored in Postgres, managed by admin UI/API
 
 ## Quickstart
 
@@ -32,61 +32,49 @@ Backend runs on `http://localhost:3001` and portal on `http://localhost:3000`.
 npx prisma generate
 ```
 
-## Core Flows
+## Core API
 
-### Register a developer
+### Backend info (public)
 ```bash
-curl -X POST http://localhost:3001/v1/auth/register \
-  -H "Content-Type: application/json" \
-  -d '{"email":"dev@ua.local","password":"password123","role":"developer"}'
+curl http://localhost:3001/api/v1/info
 ```
 
-### Create a project
+### Device process (device-facing)
 ```bash
-curl -X POST http://localhost:3001/v1/projects \
-  -H "Authorization: Bearer <accessToken>" \
-  -H "Content-Type: application/json" \
-  -d '{"name":"My App","packageName":"com.example.app"}'
-```
-
-### Create an API key (displayed once)
-```bash
-curl -X POST http://localhost:3001/v1/projects/<projectId>/api-keys \
-  -H "Authorization: Bearer <accessToken>"
-```
-
-### Issue a challenge (from app server)
-```bash
-curl -X POST http://localhost:3001/v1/challenge \
-  -H "x-ua-api-key: <apiKey>" \
-  -H "Content-Type: application/json" \
-  -d '{"projectId":"<projectId>","developerClientId":"<developerClientId>"}'
-```
-
-### Verify a challenge (mock artifact)
-```bash
-curl -X POST http://localhost:3001/v1/verify \
-  -H "x-ua-api-key: <apiKey>" \
+curl -X POST http://localhost:3001/api/v1/device/process \
   -H "Content-Type: application/json" \
   -d '{
-    "projectId":"<projectId>",
-    "developerClientId":"<developerClientId>",
-    "challengeToken":"<challengeToken>",
-    "artifact": { "type":"mock", "payload":"{\"deviceIntegrity\":\"basic\"}" }
+    "projectId":"com.example.app",
+    "requestHash":"<sha256 hex>",
+    "attestationChain":["<base64 DER cert0>", "<base64 DER cert1>"]
   }'
 ```
 
-## OpenAPI
-- Docs: `http://localhost:3001/docs`
-- JSON: `http://localhost:3001/openapi.json`
+### Decode token (app-server-facing, requires api secret)
+```bash
+curl -X POST http://localhost:3001/api/v1/app/decodeToken \
+  -H "x-ua-api-secret: <apiSecret>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "projectId":"com.example.app",
+    "token":"<token>",
+    "expectedRequestHash":"<sha256 hex>"
+  }'
+```
+
+## Portal login
+- Default admin: `admin / admin`
+- Admin creates app dev + OEM users
+- App dev registers apps and retrieves API secret
+- OEM registers device families + trust anchors
 
 ## Config
-See `config.yaml` for backend ID, signing keys, federation list, and challenge TTL. Keys are Ed25519 (base64 DER). Override with env vars:
+See `config.yaml` for backend ID, signing keys, and API secret header. Keys are Ed25519 (base64 DER).
 
+Env overrides:
 - `UA_BACKEND_ID`
-- `UA_REGION`
-- `UA_CHALLENGE_TTL`
-- `UA_API_KEY_HEADER`
+- `UA_EXTERNAL_URL`
+- `UA_API_SECRET_HEADER`
 - `UA_ACTIVE_KID`
 
 ## Tests
@@ -94,7 +82,7 @@ See `config.yaml` for backend ID, signing keys, federation list, and challenge T
 npm run -w @ua/backend test
 ```
 
-## Notes
-- Challenges are stateless and signed (JWS). Best-effort single-use is enforced via in-memory TTL cache.
-- `/v1/challenge` and `/v1/verify` require project API key auth.
-- Federation list is read-only in V1 and comes from `config.yaml`.
+## Breaking Changes (from V1)
+- `/v1/challenge` and `/v1/verify` are removed. Use `/api/v1/device/process` and `/api/v1/app/decodeToken`.
+- App-facing auth uses API secrets per app (projectId == packageName).
+- Federation list is now stored in DB and managed in the Admin UI/API.

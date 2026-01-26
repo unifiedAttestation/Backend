@@ -2,8 +2,8 @@ import { z } from "zod";
 
 export const RegisterRequestSchema = z.object({
   email: z.string().email(),
-  password: z.string().min(8),
-  role: z.enum(["developer", "oem", "admin"]).default("developer")
+  password: z.string().min(5),
+  role: z.enum(["app_dev", "oem", "admin"]).default("app_dev")
 });
 
 export const AuthResponseSchema = z.object({
@@ -12,8 +12,8 @@ export const AuthResponseSchema = z.object({
 });
 
 export const LoginRequestSchema = z.object({
-  email: z.string().email(),
-  password: z.string().min(8)
+  email: z.string().min(1),
+  password: z.string().min(5)
 });
 
 export const RefreshRequestSchema = z.object({

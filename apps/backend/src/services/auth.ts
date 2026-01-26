@@ -6,29 +6,21 @@ const JWT_SECRET = process.env.UA_JWT_SECRET || "dev-secret-change-me";
 
 export type AuthTokens = { accessToken: string; refreshToken: string };
 
-export async function registerUser(email: string, password: string, role: "developer" | "oem" | "admin") {
+export async function registerUser(
+  email: string,
+  password: string,
+  role: "app_dev" | "oem" | "admin"
+) {
   const prisma = getPrisma();
   const passwordHash = await argon2.hash(password);
   const user = await prisma.user.create({
     data: {
       email,
       passwordHash,
-      role
+      role,
+      displayName: email.split("@")[0]
     }
   });
-
-  if (role === "developer") {
-    const org = await prisma.developerOrg.create({
-      data: {
-        name: `${email.split("@")[0]} Org`,
-        ownerUserId: user.id,
-        memberships: {
-          create: [{ userId: user.id, role: "owner" }]
-        }
-      }
-    });
-    await prisma.user.update({ where: { id: user.id }, data: { developerOrgId: org.id } });
-  }
 
   if (role === "oem") {
     const org = await prisma.oemOrg.create({
@@ -49,11 +41,23 @@ export async function verifyUser(email: string, password: string) {
   if (!user) {
     return null;
   }
+  if (user.disabledAt) {
+    return null;
+  }
   const ok = await argon2.verify(user.passwordHash, password);
   if (!ok) {
     return null;
   }
   return user;
+}
+
+export async function ensureDefaultAdmin() {
+  const prisma = getPrisma();
+  const existing = await prisma.user.findFirst({ where: { role: "admin" } });
+  if (existing) {
+    return;
+  }
+  await registerUser("admin", "admin", "admin");
 }
 
 export function issueTokens(

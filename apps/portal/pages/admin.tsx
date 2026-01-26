@@ -4,33 +4,304 @@ import Layout from "../components/Layout";
 const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3001";
 
 type Backend = {
+  id: string;
   backendId: string;
   name: string;
-  region: string;
-  trustLevel: number;
+  url?: string;
   status: string;
+};
+
+type User = {
+  id: string;
+  email: string;
+  role: string;
+  disabledAt?: string | null;
+};
+
+type Settings = {
+  backendId: string;
+  externalUrl?: string;
+  activeKid: string;
 };
 
 export default function AdminPage() {
   const [backends, setBackends] = useState<Backend[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
+  const [settings, setSettings] = useState<Settings | null>(null);
+  const [newUser, setNewUser] = useState({ email: "", password: "", role: "app_dev" });
+  const [newBackendUrl, setNewBackendUrl] = useState("");
+  const [newBackendName, setNewBackendName] = useState("");
+  const [externalUrl, setExternalUrl] = useState("");
+  const [userError, setUserError] = useState<string | null>(null);
+  const [passwordUpdates, setPasswordUpdates] = useState<Record<string, string>>({});
+  const [passwordMessage, setPasswordMessage] = useState<string | null>(null);
+
+  const access = typeof window !== "undefined" ? localStorage.getItem("ua_access") : null;
+
+  const fetchAll = async () => {
+    if (!access) return;
+    const [backendRes, userRes, settingsRes] = await Promise.all([
+      fetch(`${backendUrl}/api/v1/federation/backends`),
+      fetch(`${backendUrl}/api/v1/admin/users`, {
+        headers: { Authorization: `Bearer ${access}` }
+      }),
+      fetch(`${backendUrl}/api/v1/admin/settings`, {
+        headers: { Authorization: `Bearer ${access}` }
+      })
+    ]);
+    if (backendRes.ok) {
+      setBackends(await backendRes.json());
+    }
+    if (userRes.ok) {
+      setUsers(await userRes.json());
+    }
+    if (settingsRes.ok) {
+      const data = await settingsRes.json();
+      setSettings(data);
+      setExternalUrl(data.externalUrl || "");
+    }
+  };
 
   useEffect(() => {
-    fetch(`${backendUrl}/v1/federation/backends`)
-      .then((res) => res.json())
-      .then((data) => setBackends(data));
-  }, []);
+    fetchAll();
+  }, [access]);
+
+  const createUser = async () => {
+    if (!access) return;
+    if (newUser.password.length < 5) {
+      setUserError("Password must be at least 5 characters.");
+      return;
+    }
+    setUserError(null);
+    const res = await fetch(`${backendUrl}/api/v1/admin/users`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${access}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(newUser)
+    });
+    if (res.ok) {
+      setNewUser({ email: "", password: "", role: "app_dev" });
+      fetchAll();
+      return;
+    }
+    const raw = await res.text();
+    setUserError(raw || "Failed to create user");
+  };
+
+  const disableUser = async (id: string) => {
+    if (!access) return;
+    await fetch(`${backendUrl}/api/v1/admin/users/${id}/disable`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${access}` }
+    });
+    fetchAll();
+  };
+
+  const deleteUser = async (id: string) => {
+    if (!access) return;
+    await fetch(`${backendUrl}/api/v1/admin/users/${id}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${access}` }
+    });
+    fetchAll();
+  };
+
+  const updatePassword = async (id: string) => {
+    if (!access) return;
+    setPasswordMessage(null);
+    const nextPassword = passwordUpdates[id] || "";
+    if (nextPassword.length < 5) {
+      setPasswordMessage("Password must be at least 5 characters.");
+      return;
+    }
+    const res = await fetch(`${backendUrl}/api/v1/admin/users/${id}/password`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${access}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ password: nextPassword })
+    });
+    if (res.ok) {
+      setPasswordUpdates((prev) => ({ ...prev, [id]: "" }));
+      setPasswordMessage("Password updated.");
+      return;
+    }
+    const raw = await res.text();
+    setPasswordMessage(raw || "Failed to update password");
+  };
+
+  const addBackend = async () => {
+    if (!access || !newBackendUrl) return;
+    const res = await fetch(`${backendUrl}/api/v1/federation/backends`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${access}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ url: newBackendUrl, name: newBackendName || undefined })
+    });
+    if (res.ok) {
+      setNewBackendUrl("");
+      setNewBackendName("");
+      fetchAll();
+    }
+  };
+
+  const setUrl = async () => {
+    if (!access) return;
+    await fetch(`${backendUrl}/api/v1/admin/settings/external-url`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${access}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ externalUrl })
+    });
+    fetchAll();
+  };
+
+  const rotateKey = async () => {
+    if (!access) return;
+    await fetch(`${backendUrl}/api/v1/admin/settings/rotate-key`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${access}` }
+    });
+    fetchAll();
+  };
 
   return (
     <Layout>
-      <section className="bg-white/70 rounded-2xl p-6 shadow-sm">
-        <h2 className="text-xl font-semibold">Federation Backends</h2>
-        <div className="mt-4 grid md:grid-cols-2 gap-4">
+      <div className="grid lg:grid-cols-[1.2fr,1fr] gap-8">
+        <section className="bg-white/70 rounded-2xl p-6 shadow-sm">
+          <h2 className="text-xl font-semibold">Account Management</h2>
+          <div className="mt-4 space-y-3">
+            <div className="grid md:grid-cols-3 gap-2">
+              <input
+                className="rounded-lg border border-gray-300 px-3 py-2"
+                placeholder="Username"
+                value={newUser.email}
+                onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
+              />
+              <input
+                className="rounded-lg border border-gray-300 px-3 py-2"
+                placeholder="Password"
+                type="password"
+                value={newUser.password}
+                onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
+              />
+              <select
+                className="rounded-lg border border-gray-300 px-3 py-2"
+                value={newUser.role}
+                onChange={(e) => setNewUser({ ...newUser, role: e.target.value })}
+              >
+                <option value="app_dev">App Dev</option>
+                <option value="oem">OEM</option>
+              </select>
+            </div>
+            <button className="rounded-lg bg-ink text-white px-4 py-2" onClick={createUser}>
+              Create User
+            </button>
+            {userError && <div className="text-sm text-red-600">{userError}</div>}
+          </div>
+          <div className="mt-6 space-y-2">
+            {users.map((user) => (
+              <div key={user.id} className="rounded-lg border border-gray-200 px-4 py-2">
+                <div className="text-sm">Username: {user.email}</div>
+                <div className="text-xs text-gray-500">Role: {user.role}</div>
+                <div className="mt-2 flex gap-2">
+                  <button
+                    className="rounded-md bg-sand px-3 py-1 text-xs"
+                    onClick={() => disableUser(user.id)}
+                  >
+                    Disable
+                  </button>
+                  <button
+                    className="rounded-md bg-rose-500 text-white px-3 py-1 text-xs"
+                    onClick={() => deleteUser(user.id)}
+                  >
+                    Delete
+                  </button>
+                </div>
+                <div className="mt-3 flex flex-col md:flex-row gap-2">
+                  <input
+                    className="flex-1 rounded-lg border border-gray-300 px-3 py-2"
+                    placeholder="New password"
+                    type="password"
+                    value={passwordUpdates[user.id] || ""}
+                    onChange={(e) =>
+                      setPasswordUpdates((prev) => ({ ...prev, [user.id]: e.target.value }))
+                    }
+                  />
+                  <button
+                    className="rounded-lg bg-clay text-white px-4 py-2"
+                    onClick={() => updatePassword(user.id)}
+                  >
+                    Change Password
+                  </button>
+                </div>
+                {user.disabledAt && (
+                  <div className="text-xs text-red-600">Disabled: {user.disabledAt}</div>
+                )}
+              </div>
+            ))}
+            {passwordMessage && <div className="text-sm text-red-600">{passwordMessage}</div>}
+          </div>
+        </section>
+        <section className="bg-white/70 rounded-2xl p-6 shadow-sm">
+          <h2 className="text-xl font-semibold">Settings</h2>
+          {settings && (
+            <div className="mt-4 space-y-3">
+              <div className="text-sm">Backend ID: {settings.backendId}</div>
+              <div className="text-sm">Active Key: {settings.activeKid}</div>
+              <input
+                className="w-full rounded-lg border border-gray-300 px-3 py-2"
+                placeholder="External URL"
+                value={externalUrl}
+                onChange={(e) => setExternalUrl(e.target.value)}
+              />
+              <div className="flex gap-2">
+                <button className="rounded-lg bg-clay text-white px-4 py-2" onClick={setUrl}>
+                  Save URL
+                </button>
+                <button className="rounded-lg bg-ink text-white px-4 py-2" onClick={rotateKey}>
+                  Rotate Signing Key
+                </button>
+              </div>
+            </div>
+          )}
+        </section>
+      </div>
+
+      <section className="mt-8 bg-white/70 rounded-2xl p-6 shadow-sm">
+        <h2 className="text-xl font-semibold">Federation Management</h2>
+        <div className="mt-4 space-y-3">
+          <div className="grid md:grid-cols-2 gap-2">
+            <input
+              className="rounded-lg border border-gray-300 px-3 py-2"
+              placeholder="Backend URL"
+              value={newBackendUrl}
+              onChange={(e) => setNewBackendUrl(e.target.value)}
+            />
+            <input
+              className="rounded-lg border border-gray-300 px-3 py-2"
+              placeholder="Display name (optional)"
+              value={newBackendName}
+              onChange={(e) => setNewBackendName(e.target.value)}
+            />
+          </div>
+          <button className="rounded-lg bg-moss text-white px-4 py-2" onClick={addBackend}>
+            Add Backend
+          </button>
+        </div>
+        <div className="mt-6 grid md:grid-cols-2 gap-4">
           {backends.map((backend) => (
-            <div key={backend.backendId} className="rounded-xl border border-gray-200 p-4">
+            <div key={backend.id} className="rounded-xl border border-gray-200 p-4">
               <div className="font-semibold">{backend.name}</div>
               <div className="text-xs text-gray-500">{backend.backendId}</div>
-              <div className="text-xs text-gray-500">Region: {backend.region}</div>
-              <div className="text-xs text-gray-500">Trust: {backend.trustLevel}</div>
+              <div className="text-xs text-gray-500">URL: {backend.url || "manual"}</div>
               <div className="text-xs text-gray-500">Status: {backend.status}</div>
             </div>
           ))}

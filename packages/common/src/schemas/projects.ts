@@ -1,33 +1,26 @@
 import { z } from "zod";
 
-export const ProjectSchema = z.object({
+export const AppSchema = z.object({
   id: z.string(),
-  orgId: z.string(),
+  projectId: z.string(),
   name: z.string(),
   packageName: z.string(),
+  signerDigestSha256: z.string(),
   createdAt: z.string()
 });
 
-export const CreateProjectRequestSchema = z.object({
+export const CreateAppRequestSchema = z.object({
   name: z.string().min(1),
-  packageName: z.string().min(1)
+  packageName: z.string().min(1),
+  signerDigestSha256: z.string().min(1)
 });
 
-export const ApiKeySchema = z.object({
-  id: z.string(),
-  projectId: z.string(),
-  keyPrefix: z.string(),
-  createdAt: z.string(),
-  revokedAt: z.string().nullable().optional()
-});
-
-export const CreateApiKeyResponseSchema = z.object({
-  apiKey: z.string(),
-  keyPrefix: z.string(),
+export const CreateAppSecretResponseSchema = z.object({
+  apiSecret: z.string(),
+  prefix: z.string(),
   id: z.string()
 });
 
-export type Project = z.infer<typeof ProjectSchema>;
-export type CreateProjectRequest = z.infer<typeof CreateProjectRequestSchema>;
-export type ApiKey = z.infer<typeof ApiKeySchema>;
-export type CreateApiKeyResponse = z.infer<typeof CreateApiKeyResponseSchema>;
+export type App = z.infer<typeof AppSchema>;
+export type CreateAppRequest = z.infer<typeof CreateAppRequestSchema>;
+export type CreateAppSecretResponse = z.infer<typeof CreateAppSecretResponseSchema>;

@@ -5,15 +5,17 @@ import swagger from "@fastify/swagger";
 import swaggerUi from "@fastify/swagger-ui";
 import { loadConfig } from "./lib/config";
 import { HttpError } from "./lib/errors";
-import { ReplayCache } from "./services/replayCache";
-import { ChallengeService } from "./services/challenge";
 import { RateLimiter } from "./services/rateLimiter";
+import { ensureDefaultAdmin } from "./services/auth";
 import authRoutes from "./routes/auth";
-import projectRoutes from "./routes/projects";
-import challengeRoutes from "./routes/challenge";
-import verifyRoutes from "./routes/verify";
+import infoRoutes from "./routes/info";
+import deviceRoutes from "./routes/device";
+import appRoutes from "./routes/app";
 import federationRoutes from "./routes/federation";
 import oemRoutes from "./routes/oem";
+import appManagementRoutes from "./routes/apps";
+import adminRoutes from "./routes/admin";
+import profileRoutes from "./routes/profile";
 
 export function buildServer() {
   const config = loadConfig();
@@ -40,10 +42,7 @@ export function buildServer() {
   });
 
   app.decorate("config", config);
-  app.decorate("challengeService", new ChallengeService(config));
-  app.decorate("replayCache", new ReplayCache(config.challenge.ttlSeconds));
   app.decorate("authRateLimiter", new RateLimiter(20, 60));
-  app.decorate("verifyRateLimiter", new RateLimiter(60, 60));
 
   app.register(cors, {
     origin: true,
@@ -67,12 +66,19 @@ export function buildServer() {
 
   app.get("/health", async () => ({ status: "ok" }));
 
-  app.register(authRoutes, { prefix: "/v1/auth" });
-  app.register(projectRoutes, { prefix: "/v1/projects" });
-  app.register(challengeRoutes, { prefix: "/v1/challenge" });
-  app.register(verifyRoutes, { prefix: "/v1/verify" });
-  app.register(federationRoutes, { prefix: "/v1/federation" });
-  app.register(oemRoutes, { prefix: "/v1/oem" });
+  app.register(authRoutes, { prefix: "/api/v1/auth" });
+  app.register(infoRoutes, { prefix: "/api/v1/info" });
+  app.register(deviceRoutes, { prefix: "/api/v1/device" });
+  app.register(appRoutes, { prefix: "/api/v1/app" });
+  app.register(appManagementRoutes, { prefix: "/api/v1/apps" });
+  app.register(federationRoutes, { prefix: "/api/v1/federation" });
+  app.register(oemRoutes, { prefix: "/api/v1/oem" });
+  app.register(adminRoutes, { prefix: "/api/v1/admin" });
+  app.register(profileRoutes, { prefix: "/api/v1/profile" });
+
+  app.addHook("onReady", async () => {
+    await ensureDefaultAdmin();
+  });
 
   return app;
 }
@@ -92,9 +98,6 @@ if (require.main === module) {
 declare module "fastify" {
   interface FastifyInstance {
     config: ReturnType<typeof loadConfig>;
-    challengeService: ChallengeService;
-    replayCache: ReplayCache;
     authRateLimiter: RateLimiter;
-    verifyRateLimiter: RateLimiter;
   }
 }
