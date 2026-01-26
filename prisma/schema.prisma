@@ -48,7 +48,8 @@ model App {
 
 model DeviceReport {
   id              String   @id @default(cuid())
-  appId           String
+  appId           String?
+  projectId       String
   scopedDeviceId  String
   issuerBackendId String
   deviceFamilyId  String?
@@ -57,11 +58,11 @@ model DeviceReport {
   lastSeen        DateTime
   lastVerdict     Json
   lastState       Json
-  app             App      @relation(fields: [appId], references: [id])
+  app             App?     @relation(fields: [appId], references: [id])
   deviceFamily    DeviceFamily? @relation(fields: [deviceFamilyId], references: [id])
   buildPolicy     BuildPolicy? @relation(fields: [buildPolicyId], references: [id])
 
-  @@unique([appId, scopedDeviceId], name: "appId_scopedDeviceId")
+  @@unique([projectId, scopedDeviceId], name: "projectId_scopedDeviceId")
 }
 
 model OemOrg {

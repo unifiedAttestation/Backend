@@ -34,6 +34,12 @@ export default async function appRoutes(app: FastifyInstance) {
         reply.code(403).send(errorResponse("PROJECT_MISMATCH", "projectId mismatch"));
         return;
       }
+      const prisma = getPrisma();
+      const registered = await prisma.app.findUnique({ where: { projectId: body.projectId } });
+      if (!registered) {
+        reply.code(404).send(errorResponse("APP_NOT_FOUND", "App not registered"));
+        return;
+      }
 
       let decoded;
       try {
@@ -47,6 +53,20 @@ export default async function appRoutes(app: FastifyInstance) {
         body.projectId,
         body.expectedRequestHash
       );
+
+      const tokenApp = decoded.payload.app as {
+        packageName?: string;
+        signerDigests?: string[];
+      };
+      if (tokenApp?.packageName && tokenApp.packageName !== registered.packageName) {
+        reply.code(400).send(errorResponse("PROJECT_MISMATCH", "Token package mismatch"));
+        return;
+      }
+      const signerDigests = (tokenApp?.signerDigests || []).map((digest) => digest.toLowerCase());
+      if (!signerDigests.includes(registered.signerDigestSha256.toLowerCase())) {
+        reply.code(400).send(errorResponse("SIGNER_MISMATCH", "Token signer mismatch"));
+        return;
+      }
 
       reply.send({
         verdict: decoded.payload.verdict,

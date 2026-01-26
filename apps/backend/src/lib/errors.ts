@@ -3,6 +3,7 @@ export type ErrorCode =
   | "FORBIDDEN"
   | "PROJECT_NOT_FOUND"
   | "PROJECT_MISMATCH"
+  | "PROJECT_ID_MISMATCH"
   | "APP_NOT_FOUND"
   | "INVALID_CHAIN"
   | "NO_TRUST_ANCHORS"

@@ -128,7 +128,7 @@ export default async function appManagementRoutes(app: FastifyInstance) {
       return;
     }
     const reports = await prisma.deviceReport.findMany({
-      where: { appId: appRecord.id },
+      where: { projectId: appRecord.projectId },
       orderBy: { lastSeen: "desc" }
     });
     reply.send(reports);

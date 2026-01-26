@@ -5,12 +5,7 @@ import { getPrisma } from "../lib/prisma";
 import { getActiveSigningKey } from "../lib/config";
 import { signIntegrityToken, sha256Hex } from "../lib/crypto";
 import { errorResponse } from "../lib/errors";
-import {
-  parseCertificateChain,
-  parseCertificatePem,
-  parseKeyAttestation,
-  verifyCertificateChain
-} from "../lib/attestation";
+import { parseCertificateChain, parseKeyAttestation, verifyCertificateChain } from "../lib/attestation";
 
 function computeScopedDeviceId(backendId: string, projectId: string, spkiDer: Buffer): string {
   return sha256Hex(Buffer.concat([Buffer.from(backendId, "utf8"), Buffer.from(projectId, "utf8"), spkiDer]));
@@ -136,11 +131,6 @@ export default async function deviceRoutes(app: FastifyInstance) {
     async (request, reply) => {
       const body = DeviceProcessRequestSchema.parse(request.body);
       const prisma = getPrisma();
-      const appRecord = await prisma.app.findUnique({ where: { projectId: body.projectId } });
-      if (!appRecord) {
-        reply.code(404).send(errorResponse("APP_NOT_FOUND", "Unknown projectId"));
-        return;
-      }
 
       const chain = parseCertificateChain(body.attestationChain);
       if (chain.length === 0) {
@@ -152,9 +142,8 @@ export default async function deviceRoutes(app: FastifyInstance) {
         reply.code(400).send(errorResponse("NO_TRUST_ANCHORS", "No OEM trust anchors configured"));
         return;
       }
-      const trustCerts = trustAnchors.map((anchor) => parseCertificatePem(anchor.pem));
       try {
-        verifyCertificateChain(chain, trustCerts);
+        verifyCertificateChain(chain, trustAnchors.map((anchor) => anchor.pem));
       } catch (error) {
         reply.code(400).send(errorResponse("INVALID_CHAIN", "Attestation chain validation failed"));
         return;
@@ -169,13 +158,10 @@ export default async function deviceRoutes(app: FastifyInstance) {
         reply.code(400).send(errorResponse("INVALID_CHAIN", "Missing app identity in attestation"));
         return;
       }
-      if (attestation.app.packageName !== appRecord.packageName) {
-        reply.code(400).send(errorResponse("PACKAGE_MISMATCH", "Package name mismatch"));
-        return;
-      }
-      const signerDigests = attestation.app.signerDigests.map((digest) => digest.toLowerCase());
-      if (!signerDigests.includes(appRecord.signerDigestSha256.toLowerCase())) {
-        reply.code(400).send(errorResponse("SIGNER_MISMATCH", "Signing cert digest mismatch"));
+      if (attestation.app.packageName !== body.projectId) {
+        reply
+          .code(400)
+          .send(errorResponse("PROJECT_ID_MISMATCH", "projectId does not match attestation"));
         return;
       }
 
@@ -209,14 +195,17 @@ export default async function deviceRoutes(app: FastifyInstance) {
       const signingKey = getActiveSigningKey(app.config);
       const token = signIntegrityToken(tokenPayload, signingKey);
 
+      const appRecord = await prisma.app.findUnique({ where: { projectId: body.projectId } });
       await prisma.deviceReport.upsert({
         where: {
-          appId_scopedDeviceId: {
-            appId: appRecord.id,
+          projectId_scopedDeviceId: {
+            projectId: body.projectId,
             scopedDeviceId
           }
         },
         update: {
+          appId: appRecord?.id,
+          projectId: body.projectId,
           issuerBackendId: app.config.backendId,
           lastSeen: new Date(),
           lastVerdict: verdict,
@@ -226,7 +215,8 @@ export default async function deviceRoutes(app: FastifyInstance) {
           buildPolicyName: match.buildPolicyName
         },
         create: {
-          appId: appRecord.id,
+          appId: appRecord?.id,
+          projectId: body.projectId,
           scopedDeviceId,
           issuerBackendId: app.config.backendId,
           lastSeen: new Date(),

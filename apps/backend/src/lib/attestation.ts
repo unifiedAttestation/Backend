@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import forge from "node-forge";
 
 const ANDROID_KEY_ATTESTATION_OID = "1.3.6.1.4.1.11129.2.1.17";
@@ -32,6 +33,31 @@ export type ParsedAttestation = {
   deviceIntegrity: ParsedAuthorizationList;
   publicKeySpkiDer: Buffer;
 };
+
+function extractExtensionValue(der: Buffer, oid: string): Buffer {
+  const asn1 = forge.asn1.fromDer(forge.util.createBuffer(der.toString("binary"), "binary"));
+  const certSeq = asn1.value as forge.asn1.Asn1[];
+  const tbs = certSeq[0];
+  const tbsSeq = tbs.value as forge.asn1.Asn1[];
+  const extensionsWrapper = tbsSeq.find(
+    (node) => node.tagClass === forge.asn1.Class.CONTEXT_SPECIFIC && node.type === 3
+  );
+  if (!extensionsWrapper) {
+    throw new Error("Missing certificate extensions");
+  }
+  const extensionsSeq = (extensionsWrapper.value as forge.asn1.Asn1[])[0];
+  const extensions = (extensionsSeq.value as forge.asn1.Asn1[]) || [];
+  for (const extension of extensions) {
+    const nodes = extension.value as forge.asn1.Asn1[];
+    const oidNode = nodes[0];
+    const oidValue = forge.asn1.derToOid(oidNode.value as string);
+    if (oidValue === oid) {
+      const valueNode = nodes[nodes.length - 1];
+      return Buffer.from(valueNode.value as string, "binary");
+    }
+  }
+  throw new Error("Missing attestation extension");
+}
 
 function bytesToHex(value: string): string {
   return Buffer.from(value, "binary").toString("hex");
@@ -139,12 +165,8 @@ function parseSecurityLevel(node: forge.asn1.Asn1): string {
   }
 }
 
-export function parseKeyAttestation(certificate: forge.pki.Certificate): ParsedAttestation {
-  const extension = certificate.getExtension(ANDROID_KEY_ATTESTATION_OID);
-  if (!extension || !extension.value) {
-    throw new Error("Missing Android key attestation extension");
-  }
-  const extBytes = Buffer.from(extension.value as string, "binary");
+export function parseKeyAttestation(certificateDer: Buffer): ParsedAttestation {
+  const extBytes = extractExtensionValue(certificateDer, ANDROID_KEY_ATTESTATION_OID);
   const asn1 = forge.asn1.fromDer(forge.util.createBuffer(extBytes.toString("binary"), "binary"));
   const seq = asn1.value as forge.asn1.Asn1[];
   if (!seq || seq.length < 8) {
@@ -158,8 +180,8 @@ export function parseKeyAttestation(certificate: forge.pki.Certificate): ParsedA
   const app =
     teeEnforced.attestationApplicationId ||
     softwareEnforced.attestationApplicationId || { signerDigests: [] };
-  const publicKeyAsn1 = forge.pki.publicKeyToAsn1(certificate.publicKey);
-  const publicKeyDer = forge.asn1.toDer(publicKeyAsn1).getBytes();
+  const cert = new crypto.X509Certificate(certificateDer);
+  const publicKeyDer = cert.publicKey.export({ type: "spki", format: "der" }) as Buffer;
   return {
     attestationChallengeHex: challenge,
     attestationSecurityLevel,
@@ -172,26 +194,36 @@ export function parseKeyAttestation(certificate: forge.pki.Certificate): ParsedA
       ...softwareEnforced,
       ...teeEnforced
     },
-    publicKeySpkiDer: Buffer.from(publicKeyDer, "binary")
+    publicKeySpkiDer: Buffer.from(publicKeyDer)
   };
 }
 
-export function parseCertificateChain(chain: string[]): forge.pki.Certificate[] {
+export function parseCertificateChain(chain: string[]): Buffer[] {
   return chain.map((der) => {
-    const buffer = Buffer.from(der, "base64");
-    const asn1 = forge.asn1.fromDer(forge.util.createBuffer(buffer.toString("binary"), "binary"));
-    return forge.pki.certificateFromAsn1(asn1);
+    return Buffer.from(der, "base64");
   });
 }
 
-export function parseCertificatePem(pem: string): forge.pki.Certificate {
-  return forge.pki.certificateFromPem(pem);
-}
-
 export function verifyCertificateChain(
-  chain: forge.pki.Certificate[],
-  trustAnchors: forge.pki.Certificate[]
+  chain: Buffer[],
+  trustAnchors: string[]
 ): void {
-  const caStore = forge.pki.createCaStore(trustAnchors);
-  forge.pki.verifyCertificateChain(caStore, chain);
+  const certs = chain.map((der) => new crypto.X509Certificate(der));
+  if (certs.length === 0) {
+    throw new Error("Empty certificate chain");
+  }
+  for (let i = 0; i < certs.length - 1; i += 1) {
+    const issuer = certs[i + 1];
+    if (!certs[i].verify(issuer.publicKey)) {
+      throw new Error("Invalid certificate chain");
+    }
+  }
+  const trustCerts = trustAnchors.map((pem) => new crypto.X509Certificate(pem));
+  const root = certs[certs.length - 1];
+  const trusted = trustCerts.some(
+    (anchor) => root.verify(anchor.publicKey) || root.raw.equals(anchor.raw)
+  );
+  if (!trusted) {
+    throw new Error("Untrusted certificate chain");
+  }
 }
