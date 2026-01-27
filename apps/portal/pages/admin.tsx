@@ -372,24 +372,6 @@ export default function AdminPage() {
                   Refresh Roots/Status
                 </button>
               </div>
-              <div className="mt-4">
-                <div className="text-sm font-semibold">Roots</div>
-                <div className="mt-2 space-y-2">
-                  {authority.roots.map((root) => (
-                    <div key={root.id} className="rounded-lg border border-gray-200 p-2">
-                      <div className="text-xs text-gray-500">
-                        {root.name ? `Name: ${root.name}` : "Unnamed root"}
-                      </div>
-                      <div className="mt-1 text-xs text-gray-400 break-words">
-                        {root.pem.slice(0, 120)}...
-                      </div>
-                    </div>
-                  ))}
-                  {authority.roots.length === 0 && (
-                    <div className="text-xs text-gray-500">No roots loaded.</div>
-                  )}
-                </div>
-              </div>
             </div>
           ))}
         </div>
