@@ -87,7 +87,7 @@ async function decodeTokenWithFederation(app: FastifyInstance, token: string) {
   const unverified = jwt.decode(token) as jwt.JwtPayload | null;
   const iss = unverified?.iss as string | undefined;
   if (!iss || iss === app.config.backendId) {
-    return verifyIntegrityToken(token, app.config.signingKeys.keys);
+    return await verifyIntegrityToken(token, app.config.signingKeys.keys);
   }
 
   const prisma = getPrisma();
@@ -98,5 +98,5 @@ async function decodeTokenWithFederation(app: FastifyInstance, token: string) {
     throw new Error("Unknown federation backend");
   }
   const publicKeys = backend.publicKeys as Array<{ kid: string; alg: string; publicKey: string }>;
-  return verifyIntegrityToken(token, publicKeys);
+  return await verifyIntegrityToken(token, publicKeys);
 }

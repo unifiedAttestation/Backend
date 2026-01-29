@@ -54,7 +54,8 @@ type DeviceEntry = {
   ecdsaSerialHex: string;
   revokedAt?: string | null;
   authorityName: string;
-  root: { subject: string; serialHex: string };
+  rsaRoot?: { subject: string; serialHex: string; keyType: string } | null;
+  ecdsaRoot?: { subject: string; serialHex: string; keyType: string } | null;
   deviceCodename?: string | null;
   createdAt: string;
 };
@@ -382,6 +383,21 @@ export default function OemPage() {
     setDeviceNotice(null);
     await fetch(`${backendUrl}/api/v1/oem/anchors/${id}/revoke`, {
       method: "POST",
+      headers: { Authorization: `Bearer ${access}` }
+    });
+    loadAnchors(selectedFamily.id);
+  };
+
+  const deleteAnchor = async (id: string) => {
+    if (!access) {
+      setDeviceError("Not authenticated.");
+      return;
+    }
+    if (!selectedFamily) return;
+    setDeviceError(null);
+    setDeviceNotice(null);
+    await fetch(`${backendUrl}/api/v1/oem/anchors/${id}`, {
+      method: "DELETE",
       headers: { Authorization: `Bearer ${access}` }
     });
     loadAnchors(selectedFamily.id);
@@ -745,9 +761,19 @@ export default function OemPage() {
                           <div className="text-sm font-semibold">
                             RSA: {device.rsaSerialHex}
                           </div>
+                          {device.rsaRoot && (
+                            <div className="text-xs text-gray-500">
+                              Root (RSA): {device.rsaRoot.subject} · {device.rsaRoot.serialHex}
+                            </div>
+                          )}
                           <div className="text-sm font-semibold">
                             ECDSA: {device.ecdsaSerialHex}
                           </div>
+                          {device.ecdsaRoot && (
+                            <div className="text-xs text-gray-500">
+                              Root (ECDSA): {device.ecdsaRoot.subject} · {device.ecdsaRoot.serialHex}
+                            </div>
+                          )}
                           {device.revokedAt && (
                             <div className="text-xs text-red-600">Revoked: {device.revokedAt}</div>
                           )}
@@ -758,6 +784,12 @@ export default function OemPage() {
                               disabled={Boolean(device.revokedAt)}
                             >
                               {device.revokedAt ? "Revoked" : "Revoke"}
+                            </button>
+                            <button
+                              className="rounded-md bg-gray-200 text-gray-800 px-3 py-1 text-xs"
+                              onClick={() => deleteAnchor(device.id)}
+                            >
+                              Remove
                             </button>
                           </div>
                         </div>

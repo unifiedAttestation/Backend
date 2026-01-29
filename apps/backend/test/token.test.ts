@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { signIntegrityToken, verifyIntegrityToken } from "../src/lib/crypto";
 
 describe("integrity token signing", () => {
-  it("signs and verifies payload", () => {
+  it("signs and verifies payload", async () => {
     const keyPair = crypto.generateKeyPairSync("ed25519");
     const signingKey = {
       kid: "k1",
@@ -16,8 +16,8 @@ describe("integrity token signing", () => {
       )
     };
     const payload = { iss: "backend", projectId: "com.example.app", requestHash: "abcd" };
-    const token = signIntegrityToken(payload, signingKey);
-    const verified = verifyIntegrityToken(token, [signingKey]);
+    const token = await signIntegrityToken(payload, signingKey);
+    const verified = await verifyIntegrityToken(token, [signingKey]);
     expect(verified.payload.iss).toBe("backend");
     expect(verified.payload.projectId).toBe("com.example.app");
     expect(verified.payload.requestHash).toBe("abcd");

@@ -561,6 +561,8 @@ export default async function oemRoutes(app: FastifyInstance) {
       authorityName: anchor.authority.name,
       deviceFamilyId: anchor.deviceFamilyId,
       deviceCodename: anchor.deviceFamily.codename,
+      rsaRoot: anchor.rsaRoot ? describeRoot(anchor.rsaRoot.pem) : null,
+      ecdsaRoot: anchor.ecdsaRoot ? describeRoot(anchor.ecdsaRoot.pem) : null,
       createdAt: anchor.createdAt
     }));
     reply.send(response);
@@ -608,19 +610,29 @@ export default async function oemRoutes(app: FastifyInstance) {
     }
     const rsaSerial = body.rsaSerialHex.replace(/^0+/, "").toUpperCase();
     const ecdsaSerial = body.ecdsaSerialHex.replace(/^0+/, "").toUpperCase();
-    const created = await prisma.deviceEntry.create({
-      data: {
-        oemOrgId: org.id,
-        deviceFamilyId: deviceFamily.id,
-        authorityId: authority.id,
-        rsaRootId: rsaRoot.id,
-        ecdsaRootId: ecdsaRoot.id,
-        rsaSerialHex: rsaSerial,
-        ecdsaSerialHex: ecdsaSerial,
-        deviceId: deviceFamily.codename
+    try {
+      const created = await prisma.deviceEntry.create({
+        data: {
+          oemOrgId: org.id,
+          deviceFamilyId: deviceFamily.id,
+          authorityId: authority.id,
+          rsaRootId: rsaRoot.id,
+          ecdsaRootId: ecdsaRoot.id,
+          rsaSerialHex: rsaSerial,
+          ecdsaSerialHex: ecdsaSerial,
+          deviceId: deviceFamily.codename
+        }
+      });
+      reply.send(created);
+    } catch (error: any) {
+      if (error?.code === "P2002") {
+        reply
+          .code(409)
+          .send(errorResponse("DUPLICATE_SERIAL", "RSA/ECDSA serial already registered"));
+        return;
       }
-    });
-    reply.send(created);
+      throw error;
+    }
   });
 
   app.post("/anchors/:id/revoke", async (request, reply) => {
@@ -647,6 +659,25 @@ export default async function oemRoutes(app: FastifyInstance) {
       data: { revokedAt: new Date() }
     });
     reply.send({ ok: true, revokedAt: updated.revokedAt });
+  });
+
+  app.delete("/anchors/:id", async (request, reply) => {
+    const user = requireUser(request);
+    if (!requireOemRole(user.role as string, reply)) {
+      return;
+    }
+    const org = await requireOemOrg(user.sub as string);
+    const prisma = getPrisma();
+    const { id } = request.params as { id: string };
+    const anchor = await prisma.deviceEntry.findFirst({
+      where: { id, oemOrgId: org.id }
+    });
+    if (!anchor) {
+      reply.code(404).send(errorResponse("NOT_FOUND", "Anchor not found"));
+      return;
+    }
+    await prisma.deviceEntry.delete({ where: { id } });
+    reply.send({ ok: true });
   });
 
   app.post("/anchors/generate-keybox", async (request, reply) => {
