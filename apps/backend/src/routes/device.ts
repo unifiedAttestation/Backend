@@ -304,18 +304,6 @@ export default async function deviceRoutes(app: FastifyInstance) {
         return;
       }
       try {
-        const normalized = issuerSerial.replace(/^0+/, "");
-        const matchesAnchor =
-          normalized === anchorEntry.rsaSerialHex ||
-          normalized === anchorEntry.ecdsaSerialHex;
-        if (!matchesAnchor) {
-          request.log.warn(
-            { leafSerial, issuerSerial, anchorId: anchorEntry.id },
-            "device.process device serial mismatch"
-          );
-          reply.code(400).send(errorResponse("INVALID_ATTESTATION", "Device serial mismatch"));
-          return;
-        }
         if (anchorEntry.revokedAt) {
           request.log.warn(
             { leafSerial, issuerSerial, anchorId: anchorEntry.id, revokedAt: anchorEntry.revokedAt },
@@ -326,7 +314,11 @@ export default async function deviceRoutes(app: FastifyInstance) {
         }
         if (!anchorEntry.authority.isLocal) {
           const status = await getAuthorityStatus(anchorEntry.authorityId, anchorEntry.authority.baseUrl);
-          if (status.revokedSerials.includes(normalized) || status.suspendedSerials.includes(normalized)) {
+          const chainSerials = chain.map((cert) => getCertificateSerial(cert).replace(/^0+/, "").toUpperCase());
+          const isRevoked = chainSerials.some(
+            (serial) => status.revokedSerials.includes(serial) || status.suspendedSerials.includes(serial)
+          );
+          if (isRevoked) {
             request.log.warn(
               { leafSerial, issuerSerial, authorityId: anchorEntry.authorityId },
               "device.process certificate revoked by authority"
