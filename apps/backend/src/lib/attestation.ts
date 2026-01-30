@@ -275,7 +275,7 @@ function parseAuthorizationList(buffer: Buffer): ParsedAuthorizationList {
     if (entry.constructed && value.length > 0) {
       try {
         const { tlv: inner } = readDerTlv(value, 0);
-        if (inner.tagClass === 0 && inner.tagNumber === 4) {
+        if (inner.tagClass === 0 && (inner.tagNumber === 1 || inner.tagNumber === 2 || inner.tagNumber === 4 || inner.tagNumber === 10)) {
           value = inner.value;
         } else {
           value = entry.value;
@@ -322,14 +322,29 @@ function parseAuthorizationList(buffer: Buffer): ParsedAuthorizationList {
         }
         break;
       case 705:
-        if (!result.verifiedBootState) {
-          result.verifiedBootState = parseVerifiedBootState(value);
+        if (value.length <= 2) {
+          if (!result.verifiedBootState) {
+            result.verifiedBootState = parseVerifiedBootState(value);
+          }
+        } else {
+          result.osVersionRaw = parseDerInteger(value);
         }
         break;
       case 706:
-        if (!result.verifiedBootHash) {
+        if (value.length <= 4) {
+          result.osPatchLevelRaw = parseDerInteger(value);
+          result.osPatchLevel = result.osPatchLevelRaw;
+        } else if (!result.verifiedBootHash) {
           result.verifiedBootHash = extractOctetStringValue(value).toString("hex");
         }
+        break;
+      case 718:
+        result.vendorPatchLevelRaw = parseDerInteger(value);
+        result.vendorPatchLevel = result.vendorPatchLevelRaw;
+        break;
+      case 719:
+        result.bootPatchLevelRaw = parseDerInteger(value);
+        result.bootPatchLevel = result.bootPatchLevelRaw;
         break;
       case 7060:
         result.osPatchLevelRaw = parseDerInteger(value);
