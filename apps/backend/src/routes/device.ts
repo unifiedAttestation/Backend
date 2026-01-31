@@ -49,13 +49,43 @@ function evaluateIntegrity(record: ReturnType<typeof parseKeyAttestation>) {
 type BuildPolicyMatch = {
   deviceFamilyId?: string;
   buildPolicyId?: string;
-  buildPolicyName?: string;
+  buildFingerprint?: string;
 };
+
+type DeviceMeta = {
+  manufacturer?: string;
+  brand?: string;
+  model?: string;
+  device?: string;
+  buildFingerprint?: string;
+};
+
+function normalizeMeta(value?: string | null): string {
+  return (value || "").trim().toLowerCase();
+}
+
+function checkDevicePrefilter(deviceFamily: { codename?: string | null; model?: string | null; manufacturer?: string | null; brand?: string | null }, meta?: DeviceMeta) {
+  if (!meta) return null;
+  const mismatches: string[] = [];
+  if (deviceFamily.manufacturer && normalizeMeta(deviceFamily.manufacturer) !== normalizeMeta(meta.manufacturer)) {
+    mismatches.push("manufacturer");
+  }
+  if (deviceFamily.brand && normalizeMeta(deviceFamily.brand) !== normalizeMeta(meta.brand)) {
+    mismatches.push("brand");
+  }
+  if (deviceFamily.model && normalizeMeta(deviceFamily.model) !== normalizeMeta(meta.model)) {
+    mismatches.push("model");
+  }
+  if (deviceFamily.codename && normalizeMeta(deviceFamily.codename) !== normalizeMeta(meta.device)) {
+    mismatches.push("device");
+  }
+  return mismatches.length > 0 ? mismatches : null;
+}
 
 function matchBuildPolicy(
   policies: Array<{
     id: string;
-    name: string;
+    buildFingerprint: string;
     deviceFamilyId: string;
     verifiedBootKeyHex: string;
     verifiedBootHashHex: string | null;
@@ -63,17 +93,24 @@ function matchBuildPolicy(
     minOsPatchLevelRaw: number | null;
     enabled: boolean;
   }>,
-  attestation: ReturnType<typeof parseKeyAttestation>
+  attestation: ReturnType<typeof parseKeyAttestation>,
+  deviceMeta?: DeviceMeta
 ): BuildPolicyMatch {
   const integrity = attestation.deviceIntegrity;
   const verifiedBootKeyHex = integrity.verifiedBootKey?.toLowerCase();
   const verifiedBootHashHex = integrity.verifiedBootHash?.toLowerCase();
   const osVersionRaw = integrity.osVersion;
   const osPatchLevelRaw = integrity.osPatchLevel;
+  const buildFingerprint = normalizeMeta(deviceMeta?.buildFingerprint);
 
   for (const policy of policies) {
     if (!policy.enabled) {
       continue;
+    }
+    if (buildFingerprint) {
+      if (normalizeMeta(policy.buildFingerprint) !== buildFingerprint) {
+        continue;
+      }
     }
     if (!verifiedBootKeyHex || policy.verifiedBootKeyHex.toLowerCase() !== verifiedBootKeyHex) {
       continue;
@@ -96,7 +133,7 @@ function matchBuildPolicy(
     return {
       deviceFamilyId: policy.deviceFamilyId,
       buildPolicyId: policy.id,
-      buildPolicyName: policy.name
+      buildFingerprint: policy.buildFingerprint
     };
   }
   return {};
@@ -132,9 +169,9 @@ export default async function deviceRoutes(app: FastifyInstance) {
         return;
       }
       try {
-        const chainInfo = chain.map((der, index) => {
-          const cert = new crypto.X509Certificate(der);
-          const serial = cert.serialNumber.toUpperCase();
+      const chainInfo = chain.map((der, index) => {
+        const cert = new crypto.X509Certificate(der);
+        const serial = cert.serialNumber.toUpperCase();
           const isSelfSigned =
             cert.subject === cert.issuer && cert.verify(cert.publicKey);
           return {
@@ -362,17 +399,49 @@ export default async function deviceRoutes(app: FastifyInstance) {
       );
 
       const verdict = evaluateIntegrity(attestation);
-      const buildPolicyTotal = await prisma.buildPolicy.count({
-        where: { deviceFamilyId: anchorEntry.deviceFamilyId }
-      });
-      const buildPolicies = await prisma.buildPolicy.findMany({
-        where: { enabled: true, deviceFamilyId: anchorEntry.deviceFamilyId },
-        orderBy: { createdAt: "desc" }
-      });
-      const match = matchBuildPolicy(buildPolicies, attestation);
-      if (buildPolicyTotal > 0 && !match.buildPolicyId) {
-        verdict.reasonCodes.push("BUILD_POLICY_MISMATCH");
+      const deviceMeta = body.deviceMeta as DeviceMeta | undefined;
+      const prefilterMismatch = checkDevicePrefilter(anchorEntry.deviceFamily, deviceMeta);
+      let match: BuildPolicyMatch = {};
+      let buildPolicies: Array<{
+        id: string;
+        buildFingerprint: string;
+        deviceFamilyId: string;
+        verifiedBootKeyHex: string;
+        verifiedBootHashHex: string | null;
+        osVersionRaw: number | null;
+        minOsPatchLevelRaw: number | null;
+        enabled: boolean;
+      }> = [];
+      if (prefilterMismatch) {
+        verdict.reasonCodes.push("DEVICE_PREFILTER_MISMATCH");
         verdict.isTrusted = false;
+        request.log.warn(
+          { mismatches: prefilterMismatch, deviceMeta, deviceFamilyId: anchorEntry.deviceFamilyId },
+          "device.process device prefilter mismatch"
+        );
+      } else {
+        buildPolicies = await prisma.buildPolicy.findMany({
+          where: { enabled: true, deviceFamilyId: anchorEntry.deviceFamilyId },
+          orderBy: { createdAt: "desc" }
+        });
+        if (buildPolicies.length > 0) {
+          match = matchBuildPolicy(buildPolicies, attestation, deviceMeta);
+          if (!match.buildPolicyId) {
+            verdict.reasonCodes.push("BUILD_POLICY_MISMATCH");
+            verdict.isTrusted = false;
+          }
+        } else if (deviceMeta?.buildFingerprint) {
+          verdict.reasonCodes.push("BUILD_PREFILTER_MISMATCH");
+          verdict.isTrusted = false;
+        } else {
+          const buildPolicyTotal = await prisma.buildPolicy.count({
+            where: { deviceFamilyId: anchorEntry.deviceFamilyId }
+          });
+          if (buildPolicyTotal > 0) {
+            verdict.reasonCodes.push("BUILD_POLICY_MISMATCH");
+            verdict.isTrusted = false;
+          }
+        }
       }
       const now = Math.floor(Date.now() / 1000);
       const exp = now + 60;
@@ -408,7 +477,7 @@ export default async function deviceRoutes(app: FastifyInstance) {
           lastState: attestation.deviceIntegrity,
           deviceFamilyId: anchorEntry.deviceFamilyId,
           buildPolicyId: match.buildPolicyId,
-          buildPolicyName: match.buildPolicyName
+          buildFingerprint: match.buildFingerprint
         },
         create: {
           appId: appRecord?.id,
@@ -420,7 +489,7 @@ export default async function deviceRoutes(app: FastifyInstance) {
           lastState: attestation.deviceIntegrity,
           deviceFamilyId: anchorEntry.deviceFamilyId,
           buildPolicyId: match.buildPolicyId,
-          buildPolicyName: match.buildPolicyName
+          buildFingerprint: match.buildFingerprint
         }
       });
 

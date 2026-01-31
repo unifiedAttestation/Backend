@@ -384,21 +384,21 @@ export default async function oemRoutes(app: FastifyInstance) {
       return;
     }
     const body = request.body as {
-      name?: string;
+      buildFingerprint?: string;
       verifiedBootKeyHex?: string;
       verifiedBootHashHex?: string;
       osVersionRaw?: number;
       minOsPatchLevelRaw?: number;
       enabled?: boolean;
     };
-    if (!body.name || !body.verifiedBootKeyHex) {
-      reply.code(400).send(errorResponse("INVALID_REQUEST", "Missing build name or verifiedBootKeyHex"));
+    if (!body.buildFingerprint || !body.verifiedBootKeyHex) {
+      reply.code(400).send(errorResponse("INVALID_REQUEST", "Missing build fingerprint or verifiedBootKeyHex"));
       return;
     }
     const created = await prisma.buildPolicy.create({
       data: {
         deviceFamilyId: family.id,
-        name: body.name,
+        buildFingerprint: body.buildFingerprint,
         verifiedBootKeyHex: body.verifiedBootKeyHex.toLowerCase(),
         verifiedBootHashHex: body.verifiedBootHashHex?.toLowerCase(),
         osVersionRaw: body.osVersionRaw,
@@ -432,7 +432,7 @@ export default async function oemRoutes(app: FastifyInstance) {
       return;
     }
     const body = request.body as {
-      name?: string;
+      buildFingerprint?: string;
       verifiedBootKeyHex?: string;
       verifiedBootHashHex?: string | null;
       osVersionRaw?: number | null;
@@ -442,7 +442,7 @@ export default async function oemRoutes(app: FastifyInstance) {
     const updated = await prisma.buildPolicy.update({
       where: { id: build.id },
       data: {
-        name: body.name ?? build.name,
+        buildFingerprint: body.buildFingerprint ?? build.buildFingerprint,
         verifiedBootKeyHex: body.verifiedBootKeyHex
           ? body.verifiedBootKeyHex.toLowerCase()
           : build.verifiedBootKeyHex,

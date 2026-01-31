@@ -3,7 +3,16 @@ import { z } from "zod";
 export const DeviceProcessRequestSchema = z.object({
   projectId: z.string(),
   requestHash: z.string(),
-  attestationChain: z.array(z.string()).min(1)
+  attestationChain: z.array(z.string()).min(1),
+  deviceMeta: z
+    .object({
+      manufacturer: z.string().optional(),
+      brand: z.string().optional(),
+      model: z.string().optional(),
+      device: z.string().optional(),
+      buildFingerprint: z.string().optional()
+    })
+    .optional()
 });
 
 export const DeviceProcessResponseSchema = z.object({

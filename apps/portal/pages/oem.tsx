@@ -14,7 +14,7 @@ type DeviceFamily = {
 
 type BuildPolicy = {
   id: string;
-  name: string;
+  buildFingerprint: string;
   verifiedBootKeyHex: string;
   verifiedBootHashHex?: string | null;
   osVersionRaw?: number | null;
@@ -29,7 +29,7 @@ type DeviceReport = {
   issuerBackendId: string;
   lastVerdict: { isTrusted: boolean; reasonCodes: string[] };
   lastSeen: string;
-  buildPolicyName?: string | null;
+  buildFingerprint?: string | null;
 };
 
 type AttestationServer = {
@@ -81,7 +81,7 @@ export default function OemPage() {
   const [builds, setBuilds] = useState<BuildPolicy[]>([]);
   const [buildForm, setBuildForm] = useState({
     id: "",
-    name: "",
+    buildFingerprint: "",
     verifiedBootKeyHex: "",
     verifiedBootHashHex: "",
     osVersionRaw: "",
@@ -230,7 +230,7 @@ export default function OemPage() {
   const saveBuild = async () => {
     if (!access || !selectedFamily) return;
     const payload = {
-      name: buildForm.name,
+      buildFingerprint: buildForm.buildFingerprint,
       verifiedBootKeyHex: buildForm.verifiedBootKeyHex,
       verifiedBootHashHex: buildForm.verifiedBootHashHex || undefined,
       osVersionRaw: buildForm.osVersionRaw ? Number(buildForm.osVersionRaw) : undefined,
@@ -255,7 +255,7 @@ export default function OemPage() {
     if (res.ok) {
       setBuildForm({
         id: "",
-        name: "",
+        buildFingerprint: "",
         verifiedBootKeyHex: "",
         verifiedBootHashHex: "",
         osVersionRaw: "",
@@ -269,7 +269,7 @@ export default function OemPage() {
   const editBuild = (build: BuildPolicy) => {
     setBuildForm({
       id: build.id,
-      name: build.name,
+      buildFingerprint: build.buildFingerprint,
       verifiedBootKeyHex: build.verifiedBootKeyHex,
       verifiedBootHashHex: build.verifiedBootHashHex || "",
       osVersionRaw: build.osVersionRaw?.toString() || "",
@@ -552,9 +552,11 @@ export default function OemPage() {
                 <div className="mt-3 space-y-2">
                   <input
                     className="w-full rounded-lg border border-gray-300 px-3 py-2"
-                    placeholder="Build name"
-                    value={buildForm.name}
-                    onChange={(e) => setBuildForm({ ...buildForm, name: e.target.value })}
+                    placeholder="Build fingerprint"
+                    value={buildForm.buildFingerprint}
+                    onChange={(e) =>
+                      setBuildForm({ ...buildForm, buildFingerprint: e.target.value })
+                    }
                   />
                   <input
                     className="w-full rounded-lg border border-gray-300 px-3 py-2"
@@ -604,9 +606,15 @@ export default function OemPage() {
                 <div className="mt-6 space-y-2">
                   {builds.map((build) => (
                     <div key={build.id} className="rounded-lg border border-gray-200 px-4 py-2">
-                      <div className="font-medium">{build.name}</div>
+                      <div className="font-medium">{build.buildFingerprint}</div>
                       <div className="text-xs text-gray-500">
                         Boot key: {build.verifiedBootKeyHex.slice(0, 16)}...
+                      </div>
+                      <div className="text-xs text-gray-500">
+                        OS version: {build.osVersionRaw ?? "-"}
+                      </div>
+                      <div className="text-xs text-gray-500">
+                        OS patch level: {build.minOsPatchLevelRaw ?? "-"}
                       </div>
                       <div className="text-xs text-gray-500">Enabled: {build.enabled ? "yes" : "no"}</div>
                       <div className="mt-2 flex gap-2 text-xs">
@@ -739,7 +747,7 @@ export default function OemPage() {
                       <div className="text-sm">Device: {report.scopedDeviceId.slice(0, 16)}...</div>
                       <div className="text-xs text-gray-500">Last seen: {report.lastSeen}</div>
                       <div className="text-xs text-gray-500">
-                        Build policy: {report.buildPolicyName || "unmatched"}
+                        Build fingerprint: {report.buildFingerprint || "unmatched"}
                       </div>
                       <div className="text-xs text-gray-500">
                         Reasons: {report.lastVerdict?.reasonCodes?.join(", ") || "unknown"}

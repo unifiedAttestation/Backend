@@ -55,7 +55,7 @@ model DeviceReport {
   issuerBackendId String
   deviceFamilyId  String?
   buildPolicyId   String?
-  buildPolicyName String?
+  buildFingerprint String?
   lastSeen        DateTime
   lastVerdict     Json
   lastState       Json
@@ -165,7 +165,7 @@ model AuditLog {
 model BuildPolicy {
   id                      String   @id @default(cuid())
   deviceFamilyId          String
-  name                    String
+  buildFingerprint        String
   verifiedBootKeyHex      String
   verifiedBootHashHex     String?
   osVersionRaw            Int?
