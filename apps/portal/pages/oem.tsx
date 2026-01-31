@@ -73,7 +73,9 @@ export default function OemPage() {
   });
 
   const [familyEdit, setFamilyEdit] = useState({
-    enabled: true
+    enabled: true,
+    codename: "",
+    model: ""
   });
   const [deviceCreateError, setDeviceCreateError] = useState<string | null>(null);
 
@@ -217,7 +219,9 @@ export default function OemPage() {
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        enabled: familyEdit.enabled
+        enabled: familyEdit.enabled,
+        codename: familyEdit.codename || undefined,
+        model: familyEdit.model || undefined
       })
     });
     if (res.ok) {
@@ -414,7 +418,11 @@ export default function OemPage() {
 
   const selectFamily = (family: DeviceFamily) => {
     setSelectedFamily(family);
-    setFamilyEdit({ enabled: family.enabled });
+    setFamilyEdit({
+      enabled: family.enabled,
+      codename: family.codename || "",
+      model: family.model || ""
+    });
     setActiveTab("device");
     setDeviceForm({ authorityId: "", rsaSerialHex: "", ecdsaSerialHex: "" });
     loadBuilds(family.id);
@@ -525,12 +533,18 @@ export default function OemPage() {
               <div className="max-w-xl">
                 <h3 className="text-sm font-semibold text-gray-700">Device</h3>
                 <div className="mt-3 space-y-2">
-                  <div className="rounded-lg border border-gray-200 px-3 py-2 text-sm">
-                    Codename: {selectedFamily.codename || "-"}
-                  </div>
-                  <div className="rounded-lg border border-gray-200 px-3 py-2 text-sm">
-                    Model: {selectedFamily.model || "-"}
-                  </div>
+                  <input
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2"
+                    placeholder="Device codename"
+                    value={familyEdit.codename}
+                    onChange={(e) => setFamilyEdit({ ...familyEdit, codename: e.target.value })}
+                  />
+                  <input
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2"
+                    placeholder="Model (optional)"
+                    value={familyEdit.model}
+                    onChange={(e) => setFamilyEdit({ ...familyEdit, model: e.target.value })}
+                  />
                   <label className="flex items-center gap-2 text-sm">
                     <input
                       type="checkbox"
@@ -540,7 +554,7 @@ export default function OemPage() {
                     Enabled
                   </label>
                   <button className="rounded-lg bg-ink text-white px-4 py-2" onClick={updateFamily}>
-                    Save Device Status
+                    Save Device Info
                   </button>
                 </div>
               </div>

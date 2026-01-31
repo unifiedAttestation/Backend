@@ -297,6 +297,8 @@ export default async function oemRoutes(app: FastifyInstance) {
     const { familyId } = request.params as { familyId: string };
     const body = request.body as {
       enabled?: boolean;
+      codename?: string;
+      model?: string;
     };
     const family = await prisma.deviceFamily.findFirst({
       where: { id: familyId, oemOrgId: org.id }
@@ -308,7 +310,10 @@ export default async function oemRoutes(app: FastifyInstance) {
     const updated = await prisma.deviceFamily.update({
       where: { id: family.id },
       data: {
-        enabled: body.enabled ?? family.enabled
+        enabled: body.enabled ?? family.enabled,
+        codename: body.codename ?? family.codename,
+        model: body.model ?? family.model,
+        name: body.codename ?? family.codename ?? family.name
       }
     });
     reply.send({
