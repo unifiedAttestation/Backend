@@ -74,10 +74,10 @@ function matchBuildPolicy(
   const integrity = attestation.deviceIntegrity;
   const verifiedBootKeyHex = integrity.verifiedBootKey?.toLowerCase();
   const verifiedBootHashHex = integrity.verifiedBootHash?.toLowerCase();
-  const osVersionRaw = integrity.osVersionRaw;
-  const osPatchLevelRaw = integrity.osPatchLevelRaw ?? integrity.osPatchLevel;
-  const vendorPatchLevelRaw = integrity.vendorPatchLevelRaw ?? integrity.vendorPatchLevel;
-  const bootPatchLevelRaw = integrity.bootPatchLevelRaw ?? integrity.bootPatchLevel;
+  const osVersionRaw = integrity.osVersion;
+  const osPatchLevelRaw = integrity.osPatchLevel;
+  const vendorPatchLevelRaw = integrity.vendorPatchLevel;
+  const bootPatchLevelRaw = integrity.bootPatchLevel;
   const verifiedBootState = integrity.verifiedBootState;
   const deviceLocked = integrity.deviceLocked;
 

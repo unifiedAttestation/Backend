@@ -181,11 +181,11 @@ function main() {
     console.log("Attestation security:", parsed.attestationSecurityLevel);
     console.log("Keymaster security:", parsed.keymasterSecurityLevel);
     console.log("Key origin:", parsed.deviceIntegrity.origin);
-    console.log("OS version (raw):", parsed.deviceIntegrity.osVersionRaw);
-    console.log("OS patch level (raw):", parsed.deviceIntegrity.osPatchLevelRaw);
-    console.log("Vendor patch level (raw):", parsed.deviceIntegrity.vendorPatchLevelRaw);
-    console.log("Boot patch level (raw):", parsed.deviceIntegrity.bootPatchLevelRaw);
-    console.log("TEE patch level (raw):", parsed.deviceIntegrity.teePatchLevel);
+    console.log("OS version:", parsed.deviceIntegrity.osVersion);
+    console.log("OS patch level:", parsed.deviceIntegrity.osPatchLevel);
+    console.log("Vendor patch level:", parsed.deviceIntegrity.vendorPatchLevel);
+    console.log("Boot patch level:", parsed.deviceIntegrity.bootPatchLevel);
+    console.log("TEE patch level:", parsed.deviceIntegrity.teePatchLevel);
     console.log("Device integrity:", parsed.deviceIntegrity);
   } catch (error) {
     console.error("Parse failed:", (error as Error).message);

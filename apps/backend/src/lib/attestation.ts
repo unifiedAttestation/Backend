@@ -13,10 +13,7 @@ type ParsedAuthorizationList = {
   deviceLocked?: boolean;
   verifiedBootKey?: string;
   verifiedBootHash?: string;
-  osVersionRaw?: number;
-  osPatchLevelRaw?: number;
-  vendorPatchLevelRaw?: number;
-  bootPatchLevelRaw?: number;
+  osVersion?: number;
   osPatchLevel?: number;
   vendorPatchLevel?: number;
   bootPatchLevel?: number;
@@ -342,42 +339,36 @@ function parseAuthorizationList(buffer: Buffer): ParsedAuthorizationList {
             result.verifiedBootState = parseVerifiedBootState(value);
           }
         } else {
-          result.osVersionRaw = parseDerInteger(value);
+          result.osVersion = parseDerInteger(value);
         }
         break;
       case 706:
         if (value.length <= 4) {
-          result.osPatchLevelRaw = parseDerInteger(value);
-          result.osPatchLevel = result.osPatchLevelRaw;
+          result.osPatchLevel = parseDerInteger(value);
         } else if (!result.verifiedBootHash) {
           result.verifiedBootHash = extractOctetStringValue(value).toString("hex");
         }
         break;
       case 718:
-        result.vendorPatchLevelRaw = parseDerInteger(value);
-        result.vendorPatchLevel = result.vendorPatchLevelRaw;
+        result.vendorPatchLevel = parseDerInteger(value);
         break;
       case 719:
-        result.bootPatchLevelRaw = parseDerInteger(value);
-        result.bootPatchLevel = result.bootPatchLevelRaw;
+        result.bootPatchLevel = parseDerInteger(value);
         break;
       case 7060:
-        result.osPatchLevelRaw = parseDerInteger(value);
-        result.osPatchLevel = result.osPatchLevelRaw;
+        result.osPatchLevel = parseDerInteger(value);
         break;
       case 7061:
-        result.vendorPatchLevelRaw = parseDerInteger(value);
-        result.vendorPatchLevel = result.vendorPatchLevelRaw;
+        result.vendorPatchLevel = parseDerInteger(value);
         break;
       case 7062:
-        result.bootPatchLevelRaw = parseDerInteger(value);
-        result.bootPatchLevel = result.bootPatchLevelRaw;
+        result.bootPatchLevel = parseDerInteger(value);
         break;
       case 7063:
         result.teePatchLevel = parseDerInteger(value);
         break;
       case 7050:
-        result.osVersionRaw = parseDerInteger(value);
+        result.osVersion = parseDerInteger(value);
         break;
       case 709:
         result.attestationApplicationId = parseAttestationApplicationId(value);
