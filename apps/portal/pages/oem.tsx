@@ -663,11 +663,13 @@ export default function OemPage() {
                     onChange={(e) => setFamilyEdit({ ...familyEdit, model: e.target.value })}
                   />
                   <label className="flex items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={familyEdit.enabled}
-                      onChange={(e) => setFamilyEdit({ enabled: e.target.checked })}
-                    />
+                      <input
+                        type="checkbox"
+                        checked={familyEdit.enabled}
+                        onChange={(e) =>
+                          setFamilyEdit((prev) => ({ ...prev, enabled: e.target.checked }))
+                        }
+                      />
                     Enabled
                   </label>
                   <button className="rounded-lg bg-ink text-white px-4 py-2" onClick={updateFamily}>
