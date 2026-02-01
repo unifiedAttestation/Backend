@@ -1,8 +1,17 @@
 import argon2 from "argon2";
 import jwt from "jsonwebtoken";
 import { getPrisma } from "../lib/prisma";
+import { loadConfig } from "../lib/config";
 
-const JWT_SECRET = process.env.UA_JWT_SECRET || "dev-secret-change-me";
+const DEFAULT_JWT_SECRET = "dev-secret-change-me";
+let cachedJwtSecret: string | null = null;
+
+function getJwtSecret() {
+  if (cachedJwtSecret) return cachedJwtSecret;
+  const config = loadConfig();
+  cachedJwtSecret = config.jwtSecret || DEFAULT_JWT_SECRET;
+  return cachedJwtSecret;
+}
 
 export type AuthTokens = { accessToken: string; refreshToken: string };
 
@@ -66,17 +75,18 @@ export function issueTokens(
   accessTtlMinutes: number,
   refreshTtlDays: number
 ): AuthTokens {
-  const accessToken = jwt.sign({ sub: userId, role, type: "access" }, JWT_SECRET, {
+  const secret = getJwtSecret();
+  const accessToken = jwt.sign({ sub: userId, role, type: "access" }, secret, {
     expiresIn: `${accessTtlMinutes}m`
   });
-  const refreshToken = jwt.sign({ sub: userId, role, type: "refresh" }, JWT_SECRET, {
+  const refreshToken = jwt.sign({ sub: userId, role, type: "refresh" }, secret, {
     expiresIn: `${refreshTtlDays}d`
   });
   return { accessToken, refreshToken };
 }
 
 export function verifyRefreshToken(token: string) {
-  const payload = jwt.verify(token, JWT_SECRET) as jwt.JwtPayload;
+  const payload = jwt.verify(token, getJwtSecret()) as jwt.JwtPayload;
   if (payload.type !== "refresh") {
     throw new Error("Invalid refresh token");
   }
@@ -84,7 +94,7 @@ export function verifyRefreshToken(token: string) {
 }
 
 export function verifyAccessToken(token: string) {
-  const payload = jwt.verify(token, JWT_SECRET) as jwt.JwtPayload;
+  const payload = jwt.verify(token, getJwtSecret()) as jwt.JwtPayload;
   if (payload.type !== "access") {
     throw new Error("Invalid access token");
   }

@@ -14,6 +14,7 @@ export type Config = {
   backendId: string;
   externalUrl?: string;
   configPath: string;
+  jwtSecret?: string;
   ua_root_rsa_cert_path?: string;
   ua_root_rsa_private_key_path?: string;
   ua_root_ecdsa_cert_path?: string;
@@ -76,6 +77,7 @@ export function loadConfig(): Config {
     ...loaded,
     backendId,
     externalUrl: process.env.UA_EXTERNAL_URL || loaded.externalUrl,
+    jwtSecret: process.env.UA_JWT_SECRET || loaded.jwtSecret,
     configPath,
     ua_root_rsa_cert_path: loaded.ua_root_rsa_cert_path,
     ua_root_rsa_private_key_path: loaded.ua_root_rsa_private_key_path,

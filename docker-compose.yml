@@ -17,11 +17,17 @@ services:
     environment:
       DATABASE_URL: postgresql://ua:ua@postgres:5432/ua
       PORT: 3001
-      UA_JWT_SECRET: dev-secret-change-me
+      UA_CONFIG_PATH: /app/config.yaml
     depends_on:
       - postgres
     ports:
       - "3001:3001"
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+      - ./root/ua_root_rsa.crt.pem:/app/root/ua_root_rsa.crt.pem:ro
+      - ./root/ua_root_rsa.key.pem:/app/root/ua_root_rsa.key.pem:ro
+      - ./root/ua_root_ecdsa.crt.pem:/app/root/ua_root_ecdsa.crt.pem:ro
+      - ./root/ua_root_ecdsa.key.pem:/app/root/ua_root_ecdsa.key.pem:ro
   portal:
     build:
       context: .

@@ -1,18 +1,19 @@
-ua_root_cert_path: null
-ua_root_private_key_path: null
-ua_intermediate_cert_path: null
-ua_intermediate_private_key_path: null
 backendId: 0191ae7b-ff5a-7b1f-9b1e-b7d1c0b7842c
 externalUrl: http://localhost:3001
+jwtSecret: dev-secret-change-me
+ua_root_rsa_cert_path: /app/root/ua_root_rsa.crt.pem
+ua_root_rsa_private_key_path: /app/root/ua_root_rsa.key.pem
+ua_root_ecdsa_cert_path: /app/root/ua_root_ecdsa.crt.pem
+ua_root_ecdsa_private_key_path: /app/root/ua_root_ecdsa.key.pem
 signingKeys:
-  activeKid: "k1"
+  activeKid: k1769545071325
   keys:
-    - kid: "k1"
-      alg: "EdDSA"
-      privateKey: "MC4CAQAwBQYDK2VwBCIEIHZpmqe4EtA0jQE3mUYxPRRJRGgBTQhji+GkGU/Mymob"
-      publicKey: "MCowBQYDK2VwAyEAwDqa+NOeBFlf79vbtbzh7N+58zMqC/4/TZKtNKZ9y3o="
+    - kid: k1769545071325
+      alg: EdDSA
+      publicKey: MCowBQYDK2VwAyEAHChbNJsB5FDyOqfacYlV62qfBf8t3awxM4Mus7ZSuZo=
+      privateKey: MC4CAQAwBQYDK2VwBCIEIC1i0AU5OxJQrmf12n9A4t39jXWszp96qqO370dxMTVM
 security:
-  apiSecretHeader: "x-ua-api-secret"
+  apiSecretHeader: x-ua-api-secret
   jwt:
     accessTtlMinutes: 15
     refreshTtlDays: 30
