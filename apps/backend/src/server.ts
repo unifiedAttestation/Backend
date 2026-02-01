@@ -20,6 +20,7 @@ import profileRoutes from "./routes/profile";
 
 export function buildServer() {
   const config = loadConfig();
+  let localAuthorityBaseUrl: string | null = null;
   const app = Fastify({
     logger: {
       level: process.env.LOG_LEVEL || "info"
@@ -31,6 +32,20 @@ export function buildServer() {
     const requestId = (Array.isArray(incoming) ? incoming[0] : incoming) || crypto.randomUUID();
     reply.header("x-request-id", requestId);
     (request as any).log = request.log.child({ requestId });
+
+    const host = request.headers.host;
+    if (host) {
+      const forwardedProto = request.headers["x-forwarded-proto"];
+      const proto = Array.isArray(forwardedProto)
+        ? forwardedProto[0]
+        : forwardedProto?.split(",")[0]?.trim();
+      const scheme = proto || request.protocol || "http";
+      const baseUrl = `${scheme}://${host}`;
+      if (baseUrl !== localAuthorityBaseUrl) {
+        localAuthorityBaseUrl = baseUrl;
+        await ensureLocalAuthority(config, baseUrl);
+      }
+    }
   });
 
   app.setErrorHandler((error, _request, reply) => {
@@ -79,7 +94,6 @@ export function buildServer() {
 
   app.addHook("onReady", async () => {
     await ensureDefaultAdmin();
-    await ensureLocalAuthority(config);
   });
 
   return app;

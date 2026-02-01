@@ -17,21 +17,8 @@ export default async function adminRoutes(app: FastifyInstance) {
     }
     reply.send({
       backendId: app.config.backendId,
-      externalUrl: app.config.externalUrl,
       activeKid: app.config.signingKeys.activeKid
     });
-  });
-
-  app.post("/settings/external-url", async (request, reply) => {
-    const user = requireUser(request);
-    if (user.role !== "admin") {
-      reply.code(403).send(errorResponse("FORBIDDEN", "Admin role required"));
-      return;
-    }
-    const body = request.body as { externalUrl: string };
-    app.config.externalUrl = body.externalUrl;
-    saveConfig(app.config);
-    reply.send({ ok: true });
   });
 
   app.post("/settings/rotate-key", async (request, reply) => {

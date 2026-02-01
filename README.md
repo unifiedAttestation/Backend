@@ -73,7 +73,6 @@ See `config.yaml` for backend ID, signing keys, and API secret header. Keys are 
 
 Env overrides:
 - `UA_BACKEND_ID`
-- `UA_EXTERNAL_URL`
 - `UA_API_SECRET_HEADER`
 - `UA_ACTIVE_KID`
 

@@ -4,7 +4,7 @@ import { getPrisma } from "../lib/prisma";
 
 const LOCAL_AUTHORITY_NAME = "Unified Attestation (Local)";
 
-export async function ensureLocalAuthority(config: Config) {
+export async function ensureLocalAuthority(config: Config, baseUrl: string) {
   const rsaRootPath = config.ua_root_rsa_cert_path;
   const ecdsaRootPath = config.ua_root_ecdsa_cert_path;
   if (!rsaRootPath || !ecdsaRootPath || !fs.existsSync(rsaRootPath) || !fs.existsSync(ecdsaRootPath)) {
@@ -16,12 +16,12 @@ export async function ensureLocalAuthority(config: Config) {
   const existing = await prisma.attestationAuthority.findFirst({
     where: { isLocal: true }
   });
-  const baseUrl = `${config.externalUrl || "http://localhost:3001"}/api/v1/info`;
+  const infoUrl = `${baseUrl.replace(/\/+$/, "")}/api/v1/info`;
   if (!existing) {
     const authority = await prisma.attestationAuthority.create({
       data: {
         name: LOCAL_AUTHORITY_NAME,
-        baseUrl,
+        baseUrl: infoUrl,
         enabled: true,
         isLocal: true,
         roots: {
@@ -40,10 +40,10 @@ export async function ensureLocalAuthority(config: Config) {
     });
     return authority;
   }
-  if (existing.baseUrl !== baseUrl || existing.name !== LOCAL_AUTHORITY_NAME) {
+  if (existing.baseUrl !== infoUrl || existing.name !== LOCAL_AUTHORITY_NAME) {
     await prisma.attestationAuthority.update({
       where: { id: existing.id },
-      data: { baseUrl, name: LOCAL_AUTHORITY_NAME }
+      data: { baseUrl: infoUrl, name: LOCAL_AUTHORITY_NAME }
     });
   }
   const roots = await prisma.attestationRoot.findMany({

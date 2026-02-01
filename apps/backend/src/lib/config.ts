@@ -12,7 +12,6 @@ export type SigningKey = {
 
 export type Config = {
   backendId: string;
-  externalUrl?: string;
   configPath: string;
   jwtSecret?: string;
   ua_root_rsa_cert_path?: string;
@@ -76,7 +75,6 @@ export function loadConfig(): Config {
   const config: Config = {
     ...loaded,
     backendId,
-    externalUrl: process.env.UA_EXTERNAL_URL || loaded.externalUrl,
     jwtSecret: process.env.UA_JWT_SECRET || loaded.jwtSecret,
     configPath,
     ua_root_rsa_cert_path: loaded.ua_root_rsa_cert_path,
