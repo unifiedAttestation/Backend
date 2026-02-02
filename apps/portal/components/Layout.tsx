@@ -18,6 +18,20 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     setRole(decodeRole());
+    if (typeof window === "undefined") return;
+    const originalFetch = window.fetch.bind(window);
+    window.fetch = async (...args) => {
+      const res = await originalFetch(...args);
+      if (res.status === 401) {
+        localStorage.removeItem("ua_access");
+        localStorage.removeItem("ua_refresh");
+        window.location.href = "/login";
+      }
+      return res;
+    };
+    return () => {
+      window.fetch = originalFetch;
+    };
   }, []);
 
   const handleLogout = () => {
