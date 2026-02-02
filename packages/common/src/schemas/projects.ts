@@ -4,14 +4,13 @@ export const AppSchema = z.object({
   id: z.string(),
   projectId: z.string(),
   name: z.string(),
-  packageName: z.string(),
   signerDigestSha256: z.string(),
   createdAt: z.string()
 });
 
 export const CreateAppRequestSchema = z.object({
   name: z.string().min(1),
-  packageName: z.string().min(1),
+  projectId: z.string().min(1),
   signerDigestSha256: z.string().min(1)
 });
 

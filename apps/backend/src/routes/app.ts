@@ -58,7 +58,7 @@ export default async function appRoutes(app: FastifyInstance) {
         packageName?: string;
         signerDigests?: string[];
       };
-      if (tokenApp?.packageName && tokenApp.packageName !== registered.packageName) {
+      if (tokenApp?.packageName && tokenApp.packageName !== appRecord.projectId) {
         reply.code(400).send(errorResponse("PROJECT_MISMATCH", "Token package mismatch"));
         return;
       }

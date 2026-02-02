@@ -7,7 +7,6 @@ type App = {
   id: string;
   projectId: string;
   name: string;
-  packageName: string;
   signerDigestSha256: string;
 };
 
@@ -23,7 +22,7 @@ export default function Dashboard() {
   const [apps, setApps] = useState<App[]>([]);
   const [selectedApp, setSelectedApp] = useState<App | null>(null);
   const [appName, setAppName] = useState("");
-  const [packageName, setPackageName] = useState("");
+  const [projectId, setProjectId] = useState("");
   const [signerDigest, setSignerDigest] = useState("");
   const [reports, setReports] = useState<DeviceReport[]>([]);
   const [newSecret, setNewSecret] = useState<string | null>(null);
@@ -91,12 +90,12 @@ export default function Dashboard() {
         Authorization: `Bearer ${access}`,
         "Content-Type": "application/json"
       },
-      body: JSON.stringify({ name: appName, packageName, signerDigestSha256: signerDigest })
+      body: JSON.stringify({ name: appName, projectId, signerDigestSha256: signerDigest })
     });
     if (res.ok) {
       const data = await res.json();
       setAppName("");
-      setPackageName("");
+      setProjectId("");
       setSignerDigest("");
       setNewSecret(data.apiSecret);
       fetchApps();
@@ -169,7 +168,6 @@ export default function Dashboard() {
                 }}
               >
                 <div className="font-medium">{app.name}</div>
-                <div className="text-xs opacity-80">{app.packageName}</div>
                 <div className="text-xs opacity-80">Project ID: {app.projectId}</div>
                 <div className="text-xs opacity-80">
                   Signer digest: {app.signerDigestSha256.slice(0, 16)}...
@@ -189,9 +187,9 @@ export default function Dashboard() {
             />
             <input
               className="w-full rounded-lg border border-gray-300 px-3 py-2"
-              placeholder="Package name"
-              value={packageName}
-              onChange={(e) => setPackageName(e.target.value)}
+              placeholder="Project ID (package name)"
+              value={projectId}
+              onChange={(e) => setProjectId(e.target.value)}
             />
             <input
               className="w-full rounded-lg border border-gray-300 px-3 py-2"

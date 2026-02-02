@@ -37,7 +37,6 @@ model App {
   id                 String   @id @default(cuid())
   projectId          String   @unique
   name               String
-  packageName        String
   signerDigestSha256 String
   apiSecretHash      String
   apiSecretPrefix    String

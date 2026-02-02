@@ -33,7 +33,6 @@ export default async function appManagementRoutes(app: FastifyInstance) {
           id: true,
           projectId: true,
           name: true,
-          packageName: true,
           signerDigestSha256: true,
           createdAt: true
         }
@@ -64,8 +63,7 @@ export default async function appManagementRoutes(app: FastifyInstance) {
       const created = await prisma.app.create({
         data: {
           name: body.name,
-          packageName: body.packageName,
-          projectId: body.packageName,
+          projectId: body.projectId,
           signerDigestSha256: body.signerDigestSha256.toLowerCase(),
           apiSecretHash: secret.hash,
           apiSecretPrefix: secret.prefix,
