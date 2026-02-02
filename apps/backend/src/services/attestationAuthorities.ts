@@ -48,17 +48,11 @@ export async function getAuthorityForSerial(serialNumber: string) {
     },
     include: {
       authority: true,
-      rsaRoot: true,
-      ecdsaRoot: true,
+      roots: { include: { root: true } },
       deviceFamily: true
     }
   });
   return entry;
-}
-
-export async function getAuthorityRoots(authorityId: string) {
-  const prisma = getPrisma();
-  return prisma.attestationRoot.findMany({ where: { authorityId } });
 }
 
 export async function getAuthorityStatus(authorityId: string, baseUrl: string): Promise<AuthorityStatus> {

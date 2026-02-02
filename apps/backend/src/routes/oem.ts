@@ -30,15 +30,6 @@ function requireOemRole(role: string, reply: any) {
   return true;
 }
 
-function describeRoot(pem: string) {
-  const cert = new crypto.X509Certificate(pem);
-  return {
-    subject: cert.subject,
-    serialHex: cert.serialNumber.toUpperCase(),
-    keyType: cert.publicKey.asymmetricKeyType || "unknown"
-  };
-}
-
 async function getLocalAuthority(prisma: ReturnType<typeof getPrisma>) {
   return prisma.attestationAuthority.findFirst({
     where: { isLocal: true, enabled: true },
@@ -328,6 +319,22 @@ function buildOemTrustAnchorXml(oem: {
     `  </Key>\n` +
     `</OemTrustAnchor>`
   );
+}
+
+function getRootAlgorithm(pem: string): "rsa" | "ecdsa" | null {
+  try {
+    const cert = new crypto.X509Certificate(pem);
+    const type = cert.publicKey.asymmetricKeyType;
+    if (type === "rsa") {
+      return "rsa";
+    }
+    if (type === "ec") {
+      return "ecdsa";
+    }
+  } catch {
+    return null;
+  }
+  return null;
 }
 
 function pickRootsForAuthority(roots: Array<{ id: string; pem: string }>) {
@@ -795,7 +802,7 @@ export default async function oemRoutes(app: FastifyInstance) {
         oemOrgId: org.id,
         deviceFamilyId: deviceFamilyId || undefined
       },
-      include: { authority: true, rsaRoot: true, ecdsaRoot: true, deviceFamily: true },
+      include: { authority: true, roots: { include: { root: true } }, deviceFamily: true },
       orderBy: { createdAt: "desc" }
     });
     const response = anchors.map((anchor) => ({
@@ -809,8 +816,7 @@ export default async function oemRoutes(app: FastifyInstance) {
       authorityName: anchor.authority.name,
       deviceFamilyId: anchor.deviceFamilyId,
       deviceCodename: anchor.deviceFamily.codename,
-      rsaRoot: anchor.rsaRoot ? describeRoot(anchor.rsaRoot.pem) : null,
-      ecdsaRoot: anchor.ecdsaRoot ? describeRoot(anchor.ecdsaRoot.pem) : null,
+      rootAlgorithms: anchor.roots.map((entry) => entry.algorithm),
       createdAt: anchor.createdAt
     }));
     reply.send(response);
@@ -869,9 +875,17 @@ export default async function oemRoutes(app: FastifyInstance) {
       return;
     }
     const roots = authority.roots.filter((root) => !root.oemOrgId || root.oemOrgId === org.id);
-    const { rsaRoot, ecdsaRoot } = pickRootsForAuthority(roots);
-    if (!rsaRoot || !ecdsaRoot) {
-      reply.code(400).send(errorResponse("INVALID_REQUEST", "Authority missing RSA/ECDSA roots"));
+    const rootBindings = roots
+      .map((root) => {
+        const algorithm = getRootAlgorithm(root.pem);
+        if (!algorithm) {
+          return null;
+        }
+        return { rootId: root.id, algorithm };
+      })
+      .filter((entry): entry is { rootId: string; algorithm: "rsa" | "ecdsa" } => Boolean(entry));
+    if (rootBindings.length === 0) {
+      reply.code(400).send(errorResponse("INVALID_REQUEST", "Authority missing usable roots"));
       return;
     }
     const rsaSerial = body.rsaSerialHex.replace(/^0+/, "").toUpperCase();
@@ -884,13 +898,16 @@ export default async function oemRoutes(app: FastifyInstance) {
           oemOrgId: org.id,
           deviceFamilyId: deviceFamily.id,
           authorityId: authority.id,
-          rsaRootId: rsaRoot.id,
-          ecdsaRootId: ecdsaRoot.id,
           rsaSerialHex: rsaSerial,
           ecdsaSerialHex: ecdsaSerial,
           rsaIntermediateSerialHex: rsaIntermediateSerial,
           ecdsaIntermediateSerialHex: ecdsaIntermediateSerial,
-          deviceId: deviceFamily.codename
+          deviceId: deviceFamily.codename,
+          roots: {
+            createMany: {
+              data: rootBindings
+            }
+          }
         }
       });
       reply.send(created);
@@ -946,7 +963,10 @@ export default async function oemRoutes(app: FastifyInstance) {
       reply.code(404).send(errorResponse("NOT_FOUND", "Anchor not found"));
       return;
     }
-    await prisma.deviceEntry.delete({ where: { id } });
+    await prisma.$transaction([
+      prisma.deviceEntryRoot.deleteMany({ where: { deviceEntryId: id } }),
+      prisma.deviceEntry.delete({ where: { id } })
+    ]);
     reply.send({ ok: true });
   });
 
@@ -1001,6 +1021,19 @@ export default async function oemRoutes(app: FastifyInstance) {
       reply.code(400).send(errorResponse("INVALID_REQUEST", "OEM roots not available"));
       return;
     }
+    const rootBindings = authorityRoots
+      .map((root) => {
+        const algorithm = getRootAlgorithm(root.pem);
+        if (!algorithm) {
+          return null;
+        }
+        return { rootId: root.id, algorithm };
+      })
+      .filter((entry): entry is { rootId: string; algorithm: "rsa" | "ecdsa" } => Boolean(entry));
+    if (rootBindings.length === 0) {
+      reply.code(400).send(errorResponse("INVALID_REQUEST", "Authority missing usable roots"));
+      return;
+    }
     const rsaSerialHex = crypto.randomBytes(16).toString("hex").toUpperCase();
     const ecdsaSerialHex = crypto.randomBytes(16).toString("hex").toUpperCase();
     const deviceId = deviceFamily.codename || `UA_${Date.now()}`;
@@ -1015,13 +1048,16 @@ export default async function oemRoutes(app: FastifyInstance) {
         oemOrgId: org.id,
         deviceFamilyId: deviceFamily.id,
         authorityId: localAuthority.id,
-        rsaRootId: rsaRoot.id,
-        ecdsaRootId: ecdsaRoot.id,
         rsaSerialHex,
         ecdsaSerialHex,
         rsaIntermediateSerialHex,
         ecdsaIntermediateSerialHex,
-        deviceId
+        deviceId,
+        roots: {
+          createMany: {
+            data: rootBindings
+          }
+        }
       }
     });
     await prisma.auditLog.create({

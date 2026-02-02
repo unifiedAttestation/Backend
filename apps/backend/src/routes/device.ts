@@ -13,11 +13,7 @@ import {
   parseKeyAttestation,
   verifyCertificateChainStrict
 } from "../lib/attestation";
-import {
-  getAuthorityForSerial,
-  getAuthorityRoots,
-  getAuthorityStatus
-} from "../services/attestationAuthorities";
+import { getAuthorityStatus } from "../services/attestationAuthorities";
 
 function computeScopedDeviceId(backendId: string, projectId: string, spkiDer: Buffer): string {
   return sha256Hex(Buffer.concat([Buffer.from(backendId, "utf8"), Buffer.from(projectId, "utf8"), spkiDer]));
@@ -62,24 +58,6 @@ type DeviceMeta = {
 
 function normalizeMeta(value?: string | null): string {
   return (value || "").trim().toLowerCase();
-}
-
-function checkDevicePrefilter(deviceFamily: { codename?: string | null; model?: string | null; manufacturer?: string | null; brand?: string | null }, meta?: DeviceMeta) {
-  if (!meta) return null;
-  const mismatches: string[] = [];
-  if (deviceFamily.manufacturer && normalizeMeta(deviceFamily.manufacturer) !== normalizeMeta(meta.manufacturer)) {
-    mismatches.push("manufacturer");
-  }
-  if (deviceFamily.brand && normalizeMeta(deviceFamily.brand) !== normalizeMeta(meta.brand)) {
-    mismatches.push("brand");
-  }
-  if (deviceFamily.model && normalizeMeta(deviceFamily.model) !== normalizeMeta(meta.model)) {
-    mismatches.push("model");
-  }
-  if (deviceFamily.codename && normalizeMeta(deviceFamily.codename) !== normalizeMeta(meta.device)) {
-    mismatches.push("device");
-  }
-  return mismatches.length > 0 ? mismatches : null;
 }
 
 function matchBuildPolicy(
@@ -157,7 +135,9 @@ export default async function deviceRoutes(app: FastifyInstance) {
         {
           projectId: body.projectId,
           requestHash: body.requestHash,
-          chainLength: body.attestationChain.length
+          chainLength: body.attestationChain.length,
+          deviceMetaPresent: Boolean(body.deviceMeta),
+          deviceMetaKeys: body.deviceMeta ? Object.keys(body.deviceMeta) : []
         },
         "device.process received"
       );
@@ -187,6 +167,56 @@ export default async function deviceRoutes(app: FastifyInstance) {
       } catch (error) {
         request.log.warn({ err: error }, "device.process unable to summarize chain");
       }
+      const deviceMeta = body.deviceMeta as DeviceMeta | undefined;
+      if (!deviceMeta) {
+        request.log.warn(
+          { deviceMeta, rawBody: body },
+          "device.process missing device metadata"
+        );
+        reply
+          .code(400)
+          .send(errorResponse("DEVICE_PREFILTER_MISSING", "Missing device metadata"));
+        return;
+      }
+      const families = await prisma.deviceFamily.findMany({
+        where: { enabled: true },
+        include: { oemOrg: true },
+        orderBy: { createdAt: "desc" }
+      });
+      const deviceFamily = families.find((family) => {
+        const manufacturer = family.manufacturer || family.oemOrg?.manufacturer || undefined;
+        const brand = family.brand || family.oemOrg?.brand || undefined;
+        if (manufacturer && normalizeMeta(manufacturer) !== normalizeMeta(deviceMeta.manufacturer)) {
+          return false;
+        }
+        if (brand && normalizeMeta(brand) !== normalizeMeta(deviceMeta.brand)) {
+          return false;
+        }
+        if (family.model && normalizeMeta(family.model) !== normalizeMeta(deviceMeta.model)) {
+          return false;
+        }
+        if (family.codename && normalizeMeta(family.codename) !== normalizeMeta(deviceMeta.device)) {
+          return false;
+        }
+        return true;
+      });
+      if (!deviceFamily) {
+        const attempted = families.map((family) => ({
+          id: family.id,
+          codename: family.codename,
+          model: family.model,
+          manufacturer: family.manufacturer || family.oemOrg?.manufacturer || null,
+          brand: family.brand || family.oemOrg?.brand || null
+        }));
+        request.log.warn(
+          { deviceMeta, candidates: attempted },
+          "device.process device prefilter mismatch"
+        );
+        reply
+          .code(400)
+          .send(errorResponse("DEVICE_PREFILTER_MISMATCH", "Device metadata mismatch"));
+        return;
+      }
       let anchorEntry;
       let leafSerial = "";
       let issuerSerial = "";
@@ -198,25 +228,36 @@ export default async function deviceRoutes(app: FastifyInstance) {
           return;
         }
         issuerSerial = getCertificateSerial(chain[1]).toUpperCase();
-        anchorEntry = await getAuthorityForSerial(issuerSerial);
       } catch (error) {
         request.log.error({ err: error }, "device.process failed to read leaf serial");
         reply.code(400).send(errorResponse("INVALID_ATTESTATION", "Unable to read certificate serial"));
         return;
       }
+      anchorEntry = await prisma.deviceEntry.findFirst({
+        where: {
+          deviceFamilyId: deviceFamily.id,
+          revokedAt: null
+        },
+        include: {
+          authority: true,
+          roots: { include: { root: true } },
+          deviceFamily: true
+        }
+      });
       if (!anchorEntry || !anchorEntry.authority || !anchorEntry.authority.enabled) {
         request.log.warn(
           {
-          leafSerial,
-          issuerSerial,
-          authorityId: anchorEntry?.authorityId,
-          authorityEnabled: anchorEntry?.authority?.enabled
+            leafSerial,
+            issuerSerial,
+            deviceFamilyId: deviceFamily.id,
+            authorityId: anchorEntry?.authorityId,
+            authorityEnabled: anchorEntry?.authority?.enabled
           },
-          "device.process unknown attestation authority"
+          "device.process missing active anchor"
         );
         reply
           .code(400)
-          .send(errorResponse("INVALID_ATTESTATION", "Unknown attestation authority"));
+          .send(errorResponse("ANCHOR_MISSING", "No active anchor for device"));
         return;
       }
       if (anchorEntry.deviceFamily && anchorEntry.deviceFamily.enabled === false) {
@@ -227,7 +268,7 @@ export default async function deviceRoutes(app: FastifyInstance) {
         reply.code(400).send(errorResponse("POLICY_FAIL", "Device disabled"));
         return;
       }
-      if (!anchorEntry.rsaRootId || !anchorEntry.ecdsaRootId) {
+      if (!anchorEntry.roots || anchorEntry.roots.length === 0) {
         request.log.warn(
           { leafSerial, authorityId: anchorEntry.authorityId },
           "device.process missing selected roots"
@@ -235,13 +276,43 @@ export default async function deviceRoutes(app: FastifyInstance) {
         reply.code(400).send(errorResponse("UNTRUSTED_ROOT", "No selected root for device"));
         return;
       }
-      const roots = await getAuthorityRoots(anchorEntry.authorityId);
+      const chainSerials = chain.map((cert) =>
+        getCertificateSerial(cert).replace(/^0+/, "").toUpperCase()
+      );
+      const requiredSerials = [
+        anchorEntry.rsaSerialHex,
+        anchorEntry.ecdsaSerialHex,
+        anchorEntry.rsaIntermediateSerialHex || undefined,
+        anchorEntry.ecdsaIntermediateSerialHex || undefined
+      ]
+        .filter((serial): serial is string => Boolean(serial))
+        .map((serial) => serial.replace(/^0+/, "").toUpperCase());
+      const missingSerials = requiredSerials.filter(
+        (serial) => !chainSerials.includes(serial)
+      );
+      if (missingSerials.length > 0) {
+        request.log.warn(
+          {
+            leafSerial,
+            issuerSerial,
+            missingSerials,
+            chainSerials,
+            anchorSerials: {
+              rsaLeaf: anchorEntry.rsaSerialHex,
+              ecdsaLeaf: anchorEntry.ecdsaSerialHex,
+              rsaIntermediate: anchorEntry.rsaIntermediateSerialHex,
+              ecdsaIntermediate: anchorEntry.ecdsaIntermediateSerialHex
+            }
+          },
+          "device.process anchor serial mismatch (ignored for now)"
+        );
+      }
       try {
         const chainRoot = new crypto.X509Certificate(chain[chain.length - 1]);
         const chainRootSpki = chainRoot.publicKey.export({ type: "spki", format: "der" }) as Buffer;
-        const selectedRoot = roots.find((root) => {
+        const selectedRoot = anchorEntry.roots.find((entry) => {
           try {
-            const cert = new crypto.X509Certificate(root.pem);
+            const cert = new crypto.X509Certificate(entry.root.pem);
             const rootSpki = cert.publicKey.export({ type: "spki", format: "der" }) as Buffer;
             return rootSpki.equals(chainRootSpki);
           } catch {
@@ -256,7 +327,7 @@ export default async function deviceRoutes(app: FastifyInstance) {
           reply.code(400).send(errorResponse("UNTRUSTED_ROOT", "Selected root not available"));
           return;
         }
-        const selectedRootCert = new crypto.X509Certificate(selectedRoot.pem);
+        const selectedRootCert = new crypto.X509Certificate(selectedRoot.root.pem);
         request.log.info(
           {
             leafSerial,
@@ -268,7 +339,10 @@ export default async function deviceRoutes(app: FastifyInstance) {
           },
           "device.process root comparison"
         );
-        verifyCertificateChainStrict(chain, [selectedRoot.pem]);
+        verifyCertificateChainStrict(
+          chain,
+          anchorEntry.roots.map((entry) => entry.root.pem)
+        );
       } catch (error) {
         request.log.error({ err: error, leafSerial }, "device.process chain verification failed");
         reply.code(400).send(errorResponse("INVALID_CHAIN", "Attestation chain validation failed"));
@@ -399,8 +473,6 @@ export default async function deviceRoutes(app: FastifyInstance) {
       );
 
       const verdict = evaluateIntegrity(attestation);
-      const deviceMeta = body.deviceMeta as DeviceMeta | undefined;
-      const prefilterMismatch = checkDevicePrefilter(anchorEntry.deviceFamily, deviceMeta);
       let match: BuildPolicyMatch = {};
       let buildPolicies: Array<{
         id: string;
@@ -412,35 +484,26 @@ export default async function deviceRoutes(app: FastifyInstance) {
         minOsPatchLevelRaw: number | null;
         enabled: boolean;
       }> = [];
-      if (prefilterMismatch) {
-        verdict.reasonCodes.push("DEVICE_PREFILTER_MISMATCH");
-        verdict.isTrusted = false;
-        request.log.warn(
-          { mismatches: prefilterMismatch, deviceMeta, deviceFamilyId: anchorEntry.deviceFamilyId },
-          "device.process device prefilter mismatch"
-        );
-      } else {
-        buildPolicies = await prisma.buildPolicy.findMany({
-          where: { enabled: true, deviceFamilyId: anchorEntry.deviceFamilyId },
-          orderBy: { createdAt: "desc" }
-        });
-        if (buildPolicies.length > 0) {
-          match = matchBuildPolicy(buildPolicies, attestation, deviceMeta);
-          if (!match.buildPolicyId) {
-            verdict.reasonCodes.push("BUILD_POLICY_MISMATCH");
-            verdict.isTrusted = false;
-          }
-        } else if (deviceMeta?.buildFingerprint) {
-          verdict.reasonCodes.push("BUILD_PREFILTER_MISMATCH");
+      buildPolicies = await prisma.buildPolicy.findMany({
+        where: { enabled: true, deviceFamilyId: anchorEntry.deviceFamilyId },
+        orderBy: { createdAt: "desc" }
+      });
+      if (buildPolicies.length > 0) {
+        match = matchBuildPolicy(buildPolicies, attestation, deviceMeta);
+        if (!match.buildPolicyId) {
+          verdict.reasonCodes.push("BUILD_POLICY_MISMATCH");
           verdict.isTrusted = false;
-        } else {
-          const buildPolicyTotal = await prisma.buildPolicy.count({
-            where: { deviceFamilyId: anchorEntry.deviceFamilyId }
-          });
-          if (buildPolicyTotal > 0) {
-            verdict.reasonCodes.push("BUILD_POLICY_MISMATCH");
-            verdict.isTrusted = false;
-          }
+        }
+      } else if (deviceMeta?.buildFingerprint) {
+        verdict.reasonCodes.push("BUILD_PREFILTER_MISMATCH");
+        verdict.isTrusted = false;
+      } else {
+        const buildPolicyTotal = await prisma.buildPolicy.count({
+          where: { deviceFamilyId: anchorEntry.deviceFamilyId }
+        });
+        if (buildPolicyTotal > 0) {
+          verdict.reasonCodes.push("BUILD_POLICY_MISMATCH");
+          verdict.isTrusted = false;
         }
       }
       const now = Math.floor(Date.now() / 1000);

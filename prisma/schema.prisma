@@ -135,8 +135,7 @@ model AttestationRoot {
   createdAt    DateTime @default(now())
   authority    AttestationAuthority @relation(fields: [authorityId], references: [id])
   oemOrg       OemOrg? @relation(fields: [oemOrgId], references: [id])
-  rsaDeviceEntries DeviceEntry[] @relation("DeviceRsaRoot")
-  ecdsaDeviceEntries DeviceEntry[] @relation("DeviceEcdsaRoot")
+  deviceEntries DeviceEntryRoot[]
 }
 
 model AttestationStatusCache {
@@ -158,15 +157,29 @@ model DeviceEntry {
   ecdsaSerialHex String   @unique
   rsaIntermediateSerialHex String?
   ecdsaIntermediateSerialHex String?
-  rsaRootId     String
-  ecdsaRootId   String
   revokedAt    DateTime?
   createdAt    DateTime @default(now())
   authority    AttestationAuthority @relation(fields: [authorityId], references: [id])
-  rsaRoot       AttestationRoot @relation("DeviceRsaRoot", fields: [rsaRootId], references: [id])
-  ecdsaRoot     AttestationRoot @relation("DeviceEcdsaRoot", fields: [ecdsaRootId], references: [id])
   oemOrg       OemOrg @relation(fields: [oemOrgId], references: [id])
   deviceFamily DeviceFamily @relation(fields: [deviceFamilyId], references: [id])
+  roots        DeviceEntryRoot[]
+}
+
+enum RootAlgorithm {
+  rsa
+  ecdsa
+}
+
+model DeviceEntryRoot {
+  id            String   @id @default(cuid())
+  deviceEntryId String
+  rootId        String
+  algorithm     RootAlgorithm
+  createdAt     DateTime @default(now())
+  deviceEntry   DeviceEntry @relation(fields: [deviceEntryId], references: [id])
+  root          AttestationRoot @relation(fields: [rootId], references: [id])
+
+  @@unique([deviceEntryId, rootId, algorithm], name: "deviceEntryId_rootId_algorithm")
 }
 
 model AuditLog {
