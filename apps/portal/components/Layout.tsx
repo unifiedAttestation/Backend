@@ -20,11 +20,18 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     setRole(decodeRole());
   }, []);
 
+  const handleLogout = () => {
+    if (typeof window === "undefined") return;
+    localStorage.removeItem("ua_access");
+    localStorage.removeItem("ua_refresh");
+    window.location.href = "/login";
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-sand via-white to-sand">
       <header className="px-8 py-6 flex items-center justify-between">
         <h1 className="text-2xl font-semibold tracking-tight">Unified Attestation Portal</h1>
-        <nav className="flex gap-4 text-sm">
+        <nav className="flex items-center gap-4 text-sm">
           {(role === "app_dev" || role === "admin") && (
             <Link href="/dashboard" className="hover:text-clay">
               App Dev
@@ -39,6 +46,14 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             <Link href="/admin" className="hover:text-clay">
               Admin
             </Link>
+          )}
+          {role && (
+            <button
+              className="rounded-full border border-ink/20 px-3 py-1 text-xs uppercase tracking-wide hover:border-ink"
+              onClick={handleLogout}
+            >
+              Logout
+            </button>
           )}
         </nav>
       </header>
