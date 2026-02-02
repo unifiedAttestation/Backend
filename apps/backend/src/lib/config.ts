@@ -11,13 +11,10 @@ export type SigningKey = {
 };
 
 export type Config = {
-  backendId: string;
   configPath: string;
   jwtSecret?: string;
-  signingKeys: {
-    activeKid: string;
-    keys: SigningKey[];
-  };
+  backendId?: string;
+  signingKey?: SigningKey;
   security: {
     apiSecretHeader: string;
     jwt: {
@@ -66,17 +63,10 @@ export function loadConfig(): Config {
   }
   const file = fs.readFileSync(configPath, "utf8");
   const loaded = yaml.load(file) as Config;
-  const backendId = process.env.UA_BACKEND_ID || loaded.backendId || generateUuidV7();
-
   const config: Config = {
     ...loaded,
-    backendId,
     jwtSecret: process.env.UA_JWT_SECRET || loaded.jwtSecret,
     configPath,
-    signingKeys: {
-      ...loaded.signingKeys,
-      activeKid: process.env.UA_ACTIVE_KID || loaded.signingKeys.activeKid
-    },
     security: {
       apiSecretHeader:
         process.env.UA_API_SECRET_HEADER || loaded.security.apiSecretHeader || "x-ua-api-secret",
@@ -91,23 +81,11 @@ export function loadConfig(): Config {
     }
   };
 
-  if (!loaded.backendId || loaded.backendId !== backendId) {
-    try {
-      persistConfig(configPath, config);
-    } catch (error) {
-      console.warn("Failed to persist backendId to config.yaml", error);
-    }
-  }
-
   return config;
 }
 
-export function saveConfig(config: Config) {
-  persistConfig(config.configPath, config);
-}
-
 export function getActiveSigningKey(config: Config): SigningKey {
-  const key = config.signingKeys.keys.find((k) => k.kid === config.signingKeys.activeKid);
+  const key = config.signingKey;
   if (!key || !key.privateKey) {
     throw new Error("Active signing key missing or lacks privateKey");
   }

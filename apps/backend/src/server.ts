@@ -8,6 +8,7 @@ import { HttpError } from "./lib/errors";
 import { RateLimiter } from "./services/rateLimiter";
 import { ensureDefaultAdmin } from "./services/auth";
 import { ensureLocalAuthority } from "./services/localAuthority";
+import { ensureBackendSettings } from "./services/backendSettings";
 import authRoutes from "./routes/auth";
 import infoRoutes from "./routes/info";
 import deviceRoutes from "./routes/device";
@@ -96,6 +97,9 @@ export function buildServer() {
   app.register(profileRoutes, { prefix: "/api/v1/profile" });
 
   app.addHook("onReady", async () => {
+    const settings = await ensureBackendSettings();
+    app.config.backendId = settings.backendId;
+    app.config.signingKey = settings.signingKey;
     await ensureDefaultAdmin();
   });
 

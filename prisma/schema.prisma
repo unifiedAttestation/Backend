@@ -233,3 +233,14 @@ model FederationBackend {
   status     FederationStatus
   createdAt  DateTime         @default(now())
 }
+
+model BackendSettings {
+  id                String   @id @default(cuid())
+  backendId         String   @unique
+  signingKid        String
+  signingAlg        String
+  signingPublicKey  String
+  signingPrivateKey String
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}

@@ -3,11 +3,16 @@ import { getPrisma } from "../lib/prisma";
 
 export default async function infoRoutes(app: FastifyInstance) {
   app.get("/", async () => {
-    const publicKeys = app.config.signingKeys.keys.map((key) => ({
-      kid: key.kid,
-      alg: key.alg,
-      publicKey: key.publicKey
-    }));
+    const signingKey = app.config.signingKey;
+    const publicKeys = signingKey
+      ? [
+          {
+            kid: signingKey.kid,
+            alg: signingKey.alg,
+            publicKey: signingKey.publicKey
+          }
+        ]
+      : [];
     return {
       backendId: app.config.backendId,
       publicKeys

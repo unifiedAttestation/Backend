@@ -87,7 +87,17 @@ async function decodeTokenWithFederation(app: FastifyInstance, token: string) {
   const unverified = jwt.decode(token) as jwt.JwtPayload | null;
   const iss = unverified?.iss as string | undefined;
   if (!iss || iss === app.config.backendId) {
-    return await verifyIntegrityToken(token, app.config.signingKeys.keys);
+    const signingKey = app.config.signingKey;
+    if (!signingKey) {
+      throw new Error("Local signing key not configured");
+    }
+    return await verifyIntegrityToken(token, [
+      {
+        kid: signingKey.kid,
+        alg: signingKey.alg,
+        publicKey: signingKey.publicKey
+      }
+    ]);
   }
 
   const prisma = getPrisma();

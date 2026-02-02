@@ -4,10 +4,10 @@ import { FastifyInstance } from "fastify";
 import { getPrisma } from "../lib/prisma";
 import { requireUser } from "../lib/auth";
 import { errorResponse } from "../lib/errors";
-import { saveConfig } from "../lib/config";
 import { registerUser } from "../services/auth";
 import { refreshAuthorityBundle } from "../services/attestationAuthorities";
 import { generateSelfSignedRoot } from "../services/rootAnchors";
+import { rotateBackendSigningKey } from "../services/backendSettings";
 
 function buildBackendRootXml(root: {
   name?: string | null;
@@ -42,7 +42,7 @@ export default async function adminRoutes(app: FastifyInstance) {
     }
     reply.send({
       backendId: app.config.backendId,
-      activeKid: app.config.signingKeys.activeKid
+      publicKey: app.config.signingKey?.publicKey || null
     });
   });
 
@@ -52,19 +52,9 @@ export default async function adminRoutes(app: FastifyInstance) {
       reply.code(403).send(errorResponse("FORBIDDEN", "Admin role required"));
       return;
     }
-    const keyPair = crypto.generateKeyPairSync("ed25519");
-    const publicKey = keyPair.publicKey.export({ type: "spki", format: "der" }) as Buffer;
-    const privateKey = keyPair.privateKey.export({ type: "pkcs8", format: "der" }) as Buffer;
-    const kid = `k${Date.now()}`;
-    app.config.signingKeys.keys.push({
-      kid,
-      alg: "EdDSA",
-      publicKey: publicKey.toString("base64"),
-      privateKey: privateKey.toString("base64")
-    });
-    app.config.signingKeys.activeKid = kid;
-    saveConfig(app.config);
-    reply.send({ kid });
+    const key = await rotateBackendSigningKey();
+    app.config.signingKey = key;
+    reply.send({ kid: key.kid });
   });
 
   app.get("/users", async (request, reply) => {
