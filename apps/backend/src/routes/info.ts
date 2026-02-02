@@ -70,4 +70,13 @@ export default async function infoRoutes(app: FastifyInstance) {
     }
     return { entries };
   });
+
+  app.get("/trusted-backends", async () => {
+    const prisma = getPrisma();
+    const backends = await prisma.federationBackend.findMany({
+      where: { status: "active" },
+      select: { backendId: true }
+    });
+    return { backendIds: backends.map((backend) => backend.backendId) };
+  });
 }
