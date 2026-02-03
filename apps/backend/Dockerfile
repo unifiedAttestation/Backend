@@ -19,6 +19,5 @@ COPY --from=base /app/node_modules /app/node_modules
 COPY --from=base /app/apps/backend/dist /app/apps/backend/dist
 COPY --from=base /app/prisma /app/prisma
 COPY --from=base /app/config.yaml /app/config.yaml
-WORKDIR /app/apps/backend
 ENV NODE_ENV=production
-CMD ["sh", "-c", "npx prisma migrate deploy && node dist/server.js"]
+CMD ["sh", "-c", "npx prisma migrate deploy && node apps/backend/dist/server.js"]
