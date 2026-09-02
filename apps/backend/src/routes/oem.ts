@@ -243,6 +243,58 @@ type ImportDeviceBody = {
   };
 };
 
+async function upsertDeviceFamilyAndBuildPolicy(
+  body: ImportDeviceBody,
+  org: { id: string; manufacturer?: string | null },
+  prisma: ReturnType<typeof getPrisma>,
+  codename: string,
+  buildFingerprint: string,
+  verifiedBootKey: string,
+) {
+  let deviceFamily = await prisma.deviceFamily.findFirst({ where: { oemOrgId: org.id, codename } });
+  const familyCreated = !deviceFamily;
+  if (!deviceFamily) {
+    const slugBase = buildDeviceSlugBase(org.manufacturer ?? "device", codename);
+    const slug = await ensureUniqueDeviceSlug(prisma, slugBase);
+    deviceFamily = await prisma.deviceFamily.create({
+      data: {
+        name: codename,
+        codename,
+        model: body.device?.model ?? null,
+        slug,
+        oemOrgId: org.id,
+      },
+    });
+  }
+
+  let buildPolicy = await prisma.buildPolicy.findFirst({
+    where: {
+      deviceFamilyId: deviceFamily.id,
+      buildFingerprint,
+      verifiedBootKeyHex: verifiedBootKey.toLowerCase(),
+    },
+  });
+  const policyCreated = !buildPolicy;
+  if (!buildPolicy) {
+    buildPolicy = await prisma.buildPolicy.create({
+      data: {
+        deviceFamilyId: deviceFamily.id,
+        buildFingerprint,
+        verifiedBootKeyHex: verifiedBootKey.toLowerCase(),
+        verifiedBootHashHex: body.buildPolicy?.verifiedBootHash?.toLowerCase() ?? null,
+        osVersionRaw: body.buildPolicy?.osVersionRaw
+          ? parseInt(body.buildPolicy.osVersionRaw)
+          : null,
+        minOsPatchLevelRaw: body.buildPolicy?.osPatchLevelRaw
+          ? parseInt(body.buildPolicy.osPatchLevelRaw)
+          : null,
+      },
+    });
+  }
+
+  return { deviceFamily, familyCreated, buildPolicy, policyCreated };
+}
+
 async function processDeviceImport(
   body: ImportDeviceBody,
   org: { id: string; name: string; manufacturer?: string | null },
@@ -255,6 +307,30 @@ async function processDeviceImport(
   if (!codename) throw new HttpError(400, "INVALID_REQUEST", "Missing device.codename");
   if (!buildFingerprint || !verifiedBootKey)
     throw new HttpError(400, "INVALID_REQUEST", "Missing buildFingerprint or verifiedBootKey");
+
+  if (!body.trustAnchor) {
+    const { deviceFamily, familyCreated, buildPolicy, policyCreated } =
+      await upsertDeviceFamilyAndBuildPolicy(body, org, prisma, codename, buildFingerprint, verifiedBootKey);
+    return {
+      deviceFamily: {
+        id: deviceFamily.id,
+        codename: deviceFamily.codename,
+        model: deviceFamily.model,
+        created: familyCreated,
+      },
+      buildPolicy: {
+        id: buildPolicy.id,
+        buildFingerprint: buildPolicy.buildFingerprint,
+        created: policyCreated,
+      },
+      anchor: null,
+      matchedAuthorityName: null,
+      warnings: [
+        "trustAnchor not provided — device family and build policy were registered/updated, " +
+          "but no trust anchor was created or changed.",
+      ],
+    };
+  }
 
   const ecTa = body.trustAnchor?.ec;
   const rsaTa = body.trustAnchor?.rsa;
@@ -387,46 +463,8 @@ async function processDeviceImport(
 
   const warnings: string[] = [];
 
-  let deviceFamily = await prisma.deviceFamily.findFirst({ where: { oemOrgId: org.id, codename } });
-  const familyCreated = !deviceFamily;
-  if (!deviceFamily) {
-    const slugBase = buildDeviceSlugBase(org.manufacturer ?? "device", codename);
-    const slug = await ensureUniqueDeviceSlug(prisma, slugBase);
-    deviceFamily = await prisma.deviceFamily.create({
-      data: {
-        name: codename,
-        codename,
-        model: body.device?.model ?? null,
-        slug,
-        oemOrgId: org.id,
-      },
-    });
-  }
-
-  let buildPolicy = await prisma.buildPolicy.findFirst({
-    where: {
-      deviceFamilyId: deviceFamily.id,
-      buildFingerprint,
-      verifiedBootKeyHex: verifiedBootKey.toLowerCase(),
-    },
-  });
-  const policyCreated = !buildPolicy;
-  if (!buildPolicy) {
-    buildPolicy = await prisma.buildPolicy.create({
-      data: {
-        deviceFamilyId: deviceFamily.id,
-        buildFingerprint,
-        verifiedBootKeyHex: verifiedBootKey.toLowerCase(),
-        verifiedBootHashHex: body.buildPolicy?.verifiedBootHash?.toLowerCase() ?? null,
-        osVersionRaw: body.buildPolicy?.osVersionRaw
-          ? parseInt(body.buildPolicy.osVersionRaw)
-          : null,
-        minOsPatchLevelRaw: body.buildPolicy?.osPatchLevelRaw
-          ? parseInt(body.buildPolicy.osPatchLevelRaw)
-          : null,
-      },
-    });
-  }
+  const { deviceFamily, familyCreated, buildPolicy, policyCreated } =
+    await upsertDeviceFamilyAndBuildPolicy(body, org, prisma, codename, buildFingerprint, verifiedBootKey);
 
   let anchor: { id: string; rsaSerialHex: string; ecdsaSerialHex: string } | null = null;
   if (rsaLeafSerial) {
