@@ -20,6 +20,12 @@ jobs:
           node-version: "24"
           registry-url: "https://registry.npmjs.org"
 
+      # Trusted Publishing (OIDC) needs npm >= 11.5.1; the npm bundled with
+      # a given Node version doesn't get patch-updated on its own, so pin
+      # a current npm explicitly rather than relying on whatever ships.
+      - run: npm install -g npm@latest
+      - run: npm --version
+
       # Installs the whole workspace -- the package's dependencies
       # (node-forge) are hoisted to the repo root's node_modules.
       - run: npm ci

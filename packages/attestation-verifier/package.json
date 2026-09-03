@@ -1,13 +1,13 @@
 {
   "name": "ua-attestation-verifier",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Verify Android KeyMint hardware attestation chains against the Unified Attestation public device registry, entirely on your own backend -- no dependency on any UA backend's /device/process or /app/decodeToken endpoints.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/unifiedAttestation/Backend.git",
+    "url": "https://github.com/unifiedattestation/Backend.git",
     "directory": "packages/attestation-verifier"
   },
   "files": [
