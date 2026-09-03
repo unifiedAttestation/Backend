@@ -1,6 +1,6 @@
 import crypto from "crypto";
 import forge from "node-forge";
-import { hasAttestationExtension, parseKeyAttestation } from "../src/lib/attestation";
+import { hasAttestationExtension, parseKeyAttestation } from "ua-attestation-verifier";
 
 import fs from "fs";
 import path from "path";

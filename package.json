@@ -11,9 +11,9 @@
   "scripts": {
     "dev:backend": "npm run -w @ua/backend dev",
     "dev:portal": "npm run -w @ua/portal dev",
-    "build": "npm run -w @ua/common build && npm run -w @ua/backend build && npm run -w @ua/portal build",
+    "build": "npm run -w @ua/common build && npm run -w ua-attestation-verifier build && npm run -w @ua/backend build && npm run -w @ua/portal build",
     "lint": "npm run -w @ua/backend lint && npm run -w @ua/portal lint",
-    "test": "npm run -w @ua/backend test"
+    "test": "npm run -w ua-attestation-verifier test && npm run -w @ua/backend test"
   },
   "dependencies": {
     "@ua/portal": "^0.1.0",

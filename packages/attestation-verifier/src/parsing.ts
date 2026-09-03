@@ -1,36 +1,8 @@
 import crypto from "crypto";
 import forge from "node-forge";
+import type { ParsedAttestation, ParsedAuthorizationList } from "./types";
 
 const ANDROID_KEY_ATTESTATION_OID = "1.3.6.1.4.1.11129.2.1.17";
-
-type ParsedAuthorizationList = {
-  attestationApplicationId?: {
-    packageName?: string;
-    signerDigests: string[];
-  };
-  origin?: string;
-  verifiedBootState?: string;
-  deviceLocked?: boolean;
-  verifiedBootKey?: string;
-  verifiedBootHash?: string;
-  osVersion?: number;
-  osPatchLevel?: number;
-  vendorPatchLevel?: number;
-  bootPatchLevel?: number;
-  teePatchLevel?: number;
-};
-
-export type ParsedAttestation = {
-  attestationChallengeHex: string;
-  attestationSecurityLevel: string;
-  keymasterSecurityLevel: string;
-  app: {
-    packageName?: string;
-    signerDigests: string[];
-  };
-  deviceIntegrity: ParsedAuthorizationList;
-  publicKeySpkiDer: Buffer;
-};
 
 type DerTlv = {
   tagClass: number;
@@ -41,7 +13,10 @@ type DerTlv = {
 };
 
 function extractExtensionValue(der: Buffer, oid: string): Buffer {
-  const asn1 = forge.asn1.fromDer(forge.util.createBuffer(der.toString("binary"), "binary"));
+  // @types/node-forge only declares "raw" | "utf8" for this encoding param,
+  // but forge's actual runtime accepts "binary" too (same as the original
+  // implementation used) -- type-only cast, no behavior change.
+  const asn1 = forge.asn1.fromDer(forge.util.createBuffer(der.toString("binary"), "binary" as forge.Encoding));
   const certSeq = asn1.value as forge.asn1.Asn1[];
   const tbs = certSeq[0];
   const tbsSeq = tbs.value as forge.asn1.Asn1[];
@@ -63,11 +38,6 @@ function extractExtensionValue(der: Buffer, oid: string): Buffer {
     }
   }
   throw new Error("Missing attestation extension");
-}
-
-export function getCertificateSerial(der: Buffer): string {
-  const cert = new crypto.X509Certificate(der);
-  return cert.serialNumber.toUpperCase();
 }
 
 export function hasAttestationExtension(der: Buffer): boolean {
@@ -164,10 +134,6 @@ function parseDerInteger(value: Buffer): number {
     num = (num << 8) | b;
   }
   return num;
-}
-
-function parseDerBoolean(value: Buffer): boolean {
-  return value.length > 0 && value[0] !== 0x00;
 }
 
 function parseBoolOrInt(value: Buffer): boolean {
@@ -424,77 +390,4 @@ export function parseKeyAttestation(certificateDer: Buffer): ParsedAttestation {
     },
     publicKeySpkiDer: Buffer.from(publicKeyDer)
   };
-}
-
-export function parseCertificateChain(chain: string[]): Buffer[] {
-  return chain.map((der) => {
-    return Buffer.from(der, "base64");
-  });
-}
-
-export function verifyCertificateChain(
-  chain: Buffer[],
-  trustAnchors: string[]
-): void {
-  const certs = chain.map((der) => new crypto.X509Certificate(der));
-  if (certs.length === 0) {
-    throw new Error("Empty certificate chain");
-  }
-  for (let i = 0; i < certs.length - 1; i += 1) {
-    const issuer = certs[i + 1];
-    if (!certs[i].verify(issuer.publicKey)) {
-      throw new Error("Invalid certificate chain");
-    }
-  }
-  const trustCerts = trustAnchors.map((pem) => new crypto.X509Certificate(pem));
-  const root = certs[certs.length - 1];
-  const trusted = trustCerts.some(
-    (anchor) => root.verify(anchor.publicKey) || root.raw.equals(anchor.raw)
-  );
-  if (!trusted) {
-    throw new Error("Untrusted certificate chain");
-  }
-}
-
-export function verifyCertificateChainStrict(
-  chain: Buffer[],
-  trustAnchors: string[],
-  validationDate: Date = new Date()
-): void {
-  const certs = chain.map((der) => new crypto.X509Certificate(der));
-  if (certs.length === 0) {
-    throw new Error("Empty certificate chain");
-  }
-  if (!hasAttestationExtension(chain[0])) {
-    throw new Error("Missing attestation extension on leaf");
-  }
-  for (let i = 1; i < chain.length; i += 1) {
-    if (hasAttestationExtension(chain[i])) {
-      throw new Error("Attestation extension present in non-leaf certificate");
-    }
-  }
-  for (let i = 0; i < certs.length - 1; i += 1) {
-    const subject = certs[i];
-    const issuer = certs[i + 1];
-    if (subject.issuer !== issuer.subject) {
-      throw new Error("Certificate name chaining failed");
-    }
-    if (!subject.verify(issuer.publicKey)) {
-      throw new Error("Invalid certificate chain");
-    }
-  }
-  for (let i = 1; i < certs.length; i += 1) {
-    const cert = certs[i];
-    if (validationDate < cert.validFrom || validationDate > cert.validTo) {
-      throw new Error("Certificate validity failed");
-    }
-  }
-  const trustCerts = trustAnchors.map((pem) => new crypto.X509Certificate(pem));
-  const root = certs[certs.length - 1];
-  const trusted = trustCerts.some(
-    (anchor) => root.verify(anchor.publicKey) || root.raw.equals(anchor.raw)
-  );
-  if (!trusted) {
-    throw new Error("Untrusted certificate chain");
-  }
 }

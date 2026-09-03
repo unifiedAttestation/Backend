@@ -11,110 +11,18 @@ import {
   hasAttestationExtension,
   parseCertificateChain,
   parseKeyAttestation,
-  verifyCertificateChainStrict
-} from "../lib/attestation";
+  verifyCertificateChainStrict,
+  evaluateIntegrity,
+  matchBuildPolicy,
+  normalizeMeta,
+  type BuildPolicyInput,
+  type BuildPolicyMatch,
+  type DeviceMeta
+} from "ua-attestation-verifier";
 import { getAuthorityStatus } from "../services/attestationAuthorities";
 
 function computeScopedDeviceId(backendId: string, projectId: string, spkiDer: Buffer): string {
   return sha256Hex(Buffer.concat([Buffer.from(backendId, "utf8"), Buffer.from(projectId, "utf8"), spkiDer]));
-}
-
-function evaluateIntegrity(record: ReturnType<typeof parseKeyAttestation>) {
-  const reasons: string[] = [];
-  if (
-    record.deviceIntegrity.verifiedBootState &&
-    record.deviceIntegrity.verifiedBootState !== "VERIFIED" &&
-    record.deviceIntegrity.deviceLocked === true &&
-    record.deviceIntegrity.verifiedBootKey &&
-    record.deviceIntegrity.verifiedBootHash
-  ) {
-    reasons.push("BOOT_STATE_UNVERIFIED");
-  }
-  if (record.attestationSecurityLevel !== "TEE" && record.attestationSecurityLevel !== "STRONGBOX") {
-    reasons.push("ATTESTATION_NOT_HARDWARE");
-  }
-  if (record.keymasterSecurityLevel !== "TEE" && record.keymasterSecurityLevel !== "STRONGBOX") {
-    reasons.push("KEYMASTER_NOT_HARDWARE");
-  }
-  if (!record.deviceIntegrity.osPatchLevel) {
-    reasons.push("OS_PATCHLEVEL_MISSING");
-  }
-  return { isTrusted: reasons.length === 0, reasonCodes: reasons };
-}
-
-type BuildPolicyMatch = {
-  deviceFamilyId?: string;
-  buildPolicyId?: string;
-  buildFingerprint?: string;
-};
-
-type DeviceMeta = {
-  manufacturer?: string;
-  brand?: string;
-  model?: string;
-  device?: string;
-  buildFingerprint?: string;
-};
-
-function normalizeMeta(value?: string | null): string {
-  return (value || "").trim().toLowerCase();
-}
-
-function matchBuildPolicy(
-  policies: Array<{
-    id: string;
-    buildFingerprint: string;
-    deviceFamilyId: string;
-    verifiedBootKeyHex: string;
-    verifiedBootHashHex: string | null;
-    osVersionRaw: number | null;
-    minOsPatchLevelRaw: number | null;
-    enabled: boolean;
-  }>,
-  attestation: ReturnType<typeof parseKeyAttestation>,
-  deviceMeta?: DeviceMeta
-): BuildPolicyMatch {
-  const integrity = attestation.deviceIntegrity;
-  const verifiedBootKeyHex = integrity.verifiedBootKey?.toLowerCase();
-  const verifiedBootHashHex = integrity.verifiedBootHash?.toLowerCase();
-  const osVersionRaw = integrity.osVersion;
-  const osPatchLevelRaw = integrity.osPatchLevel;
-  const buildFingerprint = normalizeMeta(deviceMeta?.buildFingerprint);
-
-  for (const policy of policies) {
-    if (!policy.enabled) {
-      continue;
-    }
-    if (buildFingerprint) {
-      if (normalizeMeta(policy.buildFingerprint) !== buildFingerprint) {
-        continue;
-      }
-    }
-    if (!verifiedBootKeyHex || policy.verifiedBootKeyHex.toLowerCase() !== verifiedBootKeyHex) {
-      continue;
-    }
-    if (policy.verifiedBootHashHex) {
-      if (!verifiedBootHashHex || policy.verifiedBootHashHex.toLowerCase() !== verifiedBootHashHex) {
-        continue;
-      }
-    }
-    if (policy.osVersionRaw !== null) {
-      if (osVersionRaw === undefined || osVersionRaw !== policy.osVersionRaw) {
-        continue;
-      }
-    }
-    if (policy.minOsPatchLevelRaw !== null) {
-      if (osPatchLevelRaw === undefined || osPatchLevelRaw < policy.minOsPatchLevelRaw) {
-        continue;
-      }
-    }
-    return {
-      deviceFamilyId: policy.deviceFamilyId,
-      buildPolicyId: policy.id,
-      buildFingerprint: policy.buildFingerprint
-    };
-  }
-  return {};
 }
 
 export default async function deviceRoutes(app: FastifyInstance) {
@@ -468,17 +376,7 @@ export default async function deviceRoutes(app: FastifyInstance) {
 
       const verdict = evaluateIntegrity(attestation);
       let match: BuildPolicyMatch = {};
-      let buildPolicies: Array<{
-        id: string;
-        buildFingerprint: string;
-        deviceFamilyId: string;
-        verifiedBootKeyHex: string;
-        verifiedBootHashHex: string | null;
-        osVersionRaw: number | null;
-        minOsPatchLevelRaw: number | null;
-        enabled: boolean;
-      }> = [];
-      buildPolicies = await prisma.buildPolicy.findMany({
+      const buildPolicies: BuildPolicyInput[] = await prisma.buildPolicy.findMany({
         where: { enabled: true, deviceFamilyId: anchorEntry.deviceFamilyId },
         orderBy: { createdAt: "desc" }
       });

@@ -2,14 +2,16 @@ FROM node:24-trixie AS base
 WORKDIR /app
 COPY package.json package-lock.json* ./
 COPY packages/common/package.json packages/common/package.json
+COPY packages/attestation-verifier/package.json packages/attestation-verifier/package.json
 COPY apps/backend/package.json apps/backend/package.json
 RUN npm ci
 COPY packages/common packages/common
+COPY packages/attestation-verifier packages/attestation-verifier
 COPY apps/backend apps/backend
 COPY prisma prisma
 COPY config.yaml config.yaml
 ENV NODE_OPTIONS=--max-old-space-size=8192
-RUN npm run -w @ua/common build && npm run -w @ua/backend build
+RUN npm run -w @ua/common build && npm run -w ua-attestation-verifier build && npm run -w @ua/backend build
 RUN mkdir -p apps/backend/static && \
   mkdir -p apps/backend/dist/static && \
   cp -R node_modules/@fastify/swagger-ui/static/. apps/backend/static/ && \

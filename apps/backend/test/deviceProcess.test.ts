@@ -1,9 +1,59 @@
 import Fastify from "fastify";
+import forge from "node-forge";
 import { describe, expect, it, vi } from "vitest";
 import deviceRoutes from "../src/routes/device";
 
+// device.ts's own root-selection code (routes/device.ts) constructs real
+// `crypto.X509Certificate` instances directly from the parsed chain and from
+// each stored authority root PEM to compare SPKIs -- that part isn't mocked
+// away by mocking "ua-attestation-verifier", so the mocked chain/root need to
+// be real, parseable X.509 DER/PEM. Using the same self-signed cert for both
+// the mocked chain's "root" position and the authority's stored root
+// guarantees their SPKIs match trivially.
+const rootKeys = forge.pki.rsa.generateKeyPair(1024);
+const rootCert = forge.pki.createCertificate();
+rootCert.publicKey = rootKeys.publicKey;
+rootCert.serialNumber = "01";
+rootCert.validity.notBefore = new Date(Date.now() - 60 * 60 * 1000);
+rootCert.validity.notAfter = new Date(Date.now() + 60 * 60 * 1000);
+const rootAttrs = [{ name: "commonName", value: "UA Test Root" }];
+rootCert.setSubject(rootAttrs);
+rootCert.setIssuer(rootAttrs);
+rootCert.sign(rootKeys.privateKey, forge.md.sha256.create());
+const rootDer = Buffer.from(forge.asn1.toDer(forge.pki.certificateToAsn1(rootCert)).getBytes(), "binary");
+const rootPem = forge.pki.certificateToPem(rootCert);
+
 const mockPrisma = {
-  buildPolicy: { findMany: vi.fn() },
+  deviceFamily: {
+    findMany: vi.fn(() =>
+      Promise.resolve([
+        {
+          id: "family1",
+          codename: null,
+          model: null,
+          enabled: true,
+          oemOrg: { manufacturer: null, brand: null }
+        }
+      ])
+    )
+  },
+  deviceEntry: {
+    findFirst: vi.fn(() =>
+      Promise.resolve({
+        id: "entry1",
+        authorityId: "auth1",
+        deviceFamilyId: "family1",
+        revokedAt: null,
+        rsaSerialHex: null,
+        ecdsaSerialHex: null,
+        rsaIntermediateSerialHex: null,
+        ecdsaIntermediateSerialHex: null,
+        authority: { id: "auth1", enabled: true, isLocal: true, roots: [{ pem: rootPem }] },
+        deviceFamily: { enabled: true }
+      })
+    )
+  },
+  buildPolicy: { findMany: vi.fn(() => Promise.resolve([])), count: vi.fn(() => Promise.resolve(0)) },
   app: { findUnique: vi.fn() },
   deviceReport: { upsert: vi.fn() }
 };
@@ -17,35 +67,28 @@ const mockAttestation = {
   attestationSecurityLevel: "TEE",
   keymasterSecurityLevel: "TEE",
   app: { packageName: "com.example.app", signerDigests: ["aa"] },
-  deviceIntegrity: {},
+  deviceIntegrity: {
+    verifiedBootKey: "aa11",
+    verifiedBootState: "VERIFIED",
+    osPatchLevel: 202410
+  },
   publicKeySpkiDer: Buffer.from("01", "hex")
 };
 
-vi.mock("../src/lib/attestation", () => ({
-  parseCertificateChain: vi.fn(() => [Buffer.from("01", "hex")]),
-  verifyCertificateChain: vi.fn(),
-  parseKeyAttestation: vi.fn(() => mockAttestation),
-  getCertificateSerial: vi.fn(() => "ABC")
-}));
+vi.mock("ua-attestation-verifier", async () => {
+  const actual = await vi.importActual<typeof import("ua-attestation-verifier")>("ua-attestation-verifier");
+  return {
+    ...actual,
+    parseCertificateChain: vi.fn(() => [Buffer.from("01", "hex"), rootDer]),
+    verifyCertificateChainStrict: vi.fn(),
+    parseKeyAttestation: vi.fn(() => mockAttestation),
+    getCertificateSerial: vi.fn(() => "ABC"),
+    hasAttestationExtension: vi.fn(() => true)
+  };
+});
 
 vi.mock("../src/services/attestationAuthorities", () => ({
-  getAuthorityForSerial: vi.fn(() => ({
-    authorityId: "auth1",
-    rsaSerialHex: "ABC",
-    ecdsaSerialHex: "DEF",
-    rsaRootId: "rootRsa",
-    ecdsaRootId: "rootEcdsa",
-    rsaRoot: { id: "rootRsa", pem: "pem" },
-    ecdsaRoot: { id: "rootEcdsa", pem: "pem" },
-    revokedAt: null,
-    deviceFamilyId: "family1",
-    authority: { baseUrl: "http://example.com", enabled: true, isLocal: false }
-  })),
-  getAuthorityRoots: vi.fn(() => [
-    { id: "rootRsa", pem: "pem" },
-    { id: "rootEcdsa", pem: "pem" }
-  ]),
-  getAuthorityStatus: vi.fn(() => ({ revokedSerials: [], suspendedSerials: [] }))
+  getAuthorityStatus: vi.fn(() => Promise.resolve({ revokedSerials: [], suspendedSerials: [] }))
 }));
 
 function buildApp() {
@@ -53,16 +96,11 @@ function buildApp() {
   app.decorate("config", {
     backendId: "backend",
     configPath: "config.yaml",
-    signingKeys: {
-      activeKid: "k1",
-      keys: [
-        {
-          kid: "k1",
-          alg: "EdDSA",
-          privateKey: "MC4CAQAwBQYDK2VwBCIEIHZpmqe4EtA0jQE3mUYxPRRJRGgBTQhji+GkGU/Mymob",
-          publicKey: "MCowBQYDK2VwAyEAwDqa+NOeBFlf79vbtbzh7N+58zMqC/4/TZKtNKZ9y3o="
-        }
-      ]
+    signingKey: {
+      kid: "k1",
+      alg: "EdDSA",
+      privateKey: "MC4CAQAwBQYDK2VwBCIEIHZpmqe4EtA0jQE3mUYxPRRJRGgBTQhji+GkGU/Mymob",
+      publicKey: "MCowBQYDK2VwAyEAwDqa+NOeBFlf79vbtbzh7N+58zMqC/4/TZKtNKZ9y3o="
     },
     security: {
       apiSecretHeader: "x-ua-api-secret",
@@ -75,7 +113,6 @@ function buildApp() {
 
 describe("/api/v1/device/process", () => {
   it("accepts unknown projectId if it matches attestation packageName", async () => {
-    mockPrisma.buildPolicy.findMany.mockResolvedValue([]);
     mockPrisma.app.findUnique.mockResolvedValue(null);
     mockPrisma.deviceReport.upsert.mockResolvedValue({});
 
@@ -86,7 +123,8 @@ describe("/api/v1/device/process", () => {
       payload: {
         projectId: "com.example.app",
         requestHash: "abc",
-        attestationChain: ["dummy"]
+        attestationChain: ["dummy"],
+        deviceMeta: {}
       }
     });
 
@@ -94,7 +132,6 @@ describe("/api/v1/device/process", () => {
   });
 
   it("rejects when projectId does not match attestation packageName", async () => {
-    mockPrisma.buildPolicy.findMany.mockResolvedValue([]);
     mockPrisma.app.findUnique.mockResolvedValue(null);
     mockPrisma.deviceReport.upsert.mockResolvedValue({});
 
@@ -107,7 +144,8 @@ describe("/api/v1/device/process", () => {
       payload: {
         projectId: "com.example.app",
         requestHash: "abc",
-        attestationChain: ["dummy"]
+        attestationChain: ["dummy"],
+        deviceMeta: {}
       }
     });
 
