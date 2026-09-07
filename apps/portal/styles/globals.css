@@ -7,6 +7,6 @@
 }
 
 body {
-  @apply bg-sand text-ink;
+  @apply bg-slate-50 text-ink;
   font-family: "DM Sans", system-ui, sans-serif;
 }

@@ -42,7 +42,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-sand via-white to-sand">
+    <div className="min-h-screen bg-slate-50">
       <header className="px-8 py-6 flex items-center justify-between">
         <h1 className="text-2xl font-semibold tracking-tight">Unified Attestation Portal</h1>
         <nav className="flex items-center gap-4 text-sm">
