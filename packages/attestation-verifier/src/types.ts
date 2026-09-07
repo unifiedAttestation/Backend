@@ -81,8 +81,29 @@ export type DeviceRegistryEntry = {
 
 export type RevocationStatus = Record<string, { status: "REVOKED"; reason: string }>;
 
-/** Same string vocabulary as the backend's `errorResponse` codes in routes/device.ts,
- * so error-handling code written against POST /device/process transfers directly. */
+/** A backend's own signing key, as returned by GET /api/v1/info's `publicKeys[]`
+ * and by each row of GET /api/v1/federation/backends' `publicKeys`. */
+export type SigningKeyInfo = {
+  kid: string;
+  alg: string;
+  publicKey: string;
+};
+
+export type BackendInfo = {
+  backendId: string;
+  publicKeys: SigningKeyInfo[];
+};
+
+export type FederationBackendEntry = {
+  backendId: string;
+  publicKeys: SigningKeyInfo[];
+  status: string;
+};
+
+/** Same string vocabulary as the backend's `errorResponse` codes in routes/device.ts
+ * (plus tokenValidation.ts's codes for the token-verification path), so
+ * error-handling code written against POST /device/process or POST
+ * /app/decodeToken transfers directly. */
 export type AttestationErrorCode =
   | "INVALID_CHAIN"
   | "INVALID_ATTESTATION"
@@ -91,7 +112,13 @@ export type AttestationErrorCode =
   | "REVOKED_CERT"
   | "CHALLENGE_MISMATCH"
   | "APP_ID_MISMATCH"
-  | "POLICY_FAIL";
+  | "POLICY_FAIL"
+  | "INVALID_TOKEN"
+  | "UNKNOWN_ISSUER"
+  | "TOKEN_EXPIRED"
+  | "PROJECT_MISMATCH"
+  | "REQUEST_HASH_MISMATCH"
+  | "INVALID_SIGNATURE";
 
 export class AttestationVerificationError extends Error {
   code: AttestationErrorCode;

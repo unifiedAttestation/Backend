@@ -36,9 +36,29 @@ if (result.verdict.isTrusted) {
 
 Errors are thrown as `AttestationVerificationError` with a `code` matching the same vocabulary the UA backend's `/device/process` uses (`INVALID_CHAIN`, `ANCHOR_MISSING`, `UNTRUSTED_ROOT`, `REVOKED_CERT`, `CHALLENGE_MISMATCH`, `APP_ID_MISMATCH`, `POLICY_FAIL`), so error handling written against that endpoint transfers directly.
 
+### Offline token verification (`verifyIntegrityTokenOffline`)
+
+`verifyDeviceAttestation` above skips `/device/process` (verify the raw attestation chain yourself). This function skips the *other* live call -- `/app/decodeToken` -- letting you verify a UA-**issued token** yourself instead of asking a UA backend to check it for you every time:
+
+```ts
+import { verifyIntegrityTokenOffline } from "ua-attestation-verifier";
+
+const result = await verifyIntegrityTokenOffline({
+  token,                          // the UA token, as returned by /device/process (or forwarded by an app)
+  registryBaseUrl: "https://uattest.volla.tech",
+  projectId: "com.example.app",   // optional
+  expectedRequestHash,             // optional
+  signerDigestSha256,               // optional -- checks the app's real signing cert, not just its package name
+});
+```
+
+How it resolves trust: it reads the token's (unverified) `iss` and `kid`, fetches `GET /api/v1/info` (cached) for the issuing backend's own public keys, and -- if the token was minted by some *other* backend federated with that one -- also fetches `GET /api/v1/federation/backends` (cached) to find that backend's row. Both endpoints are already public today; no new UA backend changes were needed to support this. It then verifies the signature and `exp`/`projectId`/`requestHash`/`signerDigestSha256` locally, exactly mirroring what `/app/decodeToken` and its internal `tokenValidation.ts` already check, and returns the same `{verdict, requestHash, claims}` shape `/app/decodeToken` returns -- so this is a drop-in offline substitute for that call.
+
+**Trust model, to be explicit:** this doesn't remove trust in UA -- you're still trusting whichever backend's signing key you fetched, same as calling `/app/decodeToken` live does. What changes is *when* that trust is exercised: once per cache TTL (fetching a public key) instead of once per token (a live call). The device's own one-time call to mint the token in the first place still needs some UA backend to be reachable -- this only removes the App Server's dependency on backend uptime at verification time, not the device's dependency at mint time.
+
 ### Lower-level primitives
 
-For advanced use (custom caching, offline batch verification, etc.), the individual building blocks are also exported: `parseKeyAttestation`, `verifyCertificateChainStrict`, `matchBuildPolicy`, `evaluateIntegrity`, `fetchDeviceEntry`, `fetchRootCertificates`, `fetchRevocationStatus`, `createAttestationCache`.
+For advanced use (custom caching, offline batch verification, etc.), the individual building blocks are also exported: `parseKeyAttestation`, `verifyCertificateChainStrict`, `matchBuildPolicy`, `evaluateIntegrity`, `fetchDeviceEntry`, `fetchRootCertificates`, `fetchRevocationStatus`, `fetchBackendInfo`, `fetchFederationBackends`, `createAttestationCache`.
 
 ## Caching and revocation freshness
 
@@ -49,5 +69,6 @@ For advanced use (custom caching, offline batch verification, etc.), the individ
 ## What's intentionally different from the internal backend
 
 - The public registry only lists *enabled* build policies, so this package can't distinguish "no builds registered for this device" from "all builds are disabled" -- both look like an empty build list.
-- `verifyDeviceAttestation`'s result has no `iss` claim (no JWT is involved in this local-verification flow).
+- `verifyDeviceAttestation`'s result has no `iss` claim (no JWT is involved in that particular flow -- it verifies a raw attestation chain, not a UA-issued token).
 - Cross-authority revocation (an upstream CA like Google separately revoking a serial) is not covered -- only revocations tracked by the backend you're pointed at (`/info/status`) are checked.
+- `verifyIntegrityTokenOffline` has no equivalent of the backend's `DeviceReport` upsert -- it's a pure, stateless check with no side effects, by design.
